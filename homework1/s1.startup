@@ -17,6 +17,7 @@ tc qdisc add dev eth4 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 625
 
 /usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
 ovs-vsctl add-br s1
+ovs-vsctl set Bridge s1 other-config:datapath-id=0000000000000006
 ovs-vsctl add-port s1 eth0
 ovs-vsctl add-port s1 eth1
 ovs-vsctl add-port s1 eth2
