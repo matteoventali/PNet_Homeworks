@@ -9,9 +9,6 @@ from pox.lib.revent import Event, EventMixin
 log = core.getLogger()
 
 class TopologyStable(Event):
-    """
-    Fired when the topology has stopped changing for a configured amount of time.
-    """
     def __init__(self, adjacency, switches):
         super(TopologyStable, self).__init__()
         self.adjacency = adjacency
