@@ -46,109 +46,51 @@ training_state = {}
 class ProjectController(object):
 
     def __init__(self, connection):
-
         self.connection = connection
         self.dpid = connection.dpid
+        
+        # L2 Learning table specific to this switch: {MAC_ADDRESS: PORT}
+        # Used to route traffic without flooding the network.
+        self.mac_to_port = {}
 
         connection.addListeners(self)
 
-        log.info(
-            "Switch connected: %s",
-            self.dpid
-        )
+        log.info("Switch connected: %s", self.dpid)
 
-    def install_flow_rule(
-        self,
-        event,
-        ip_packet,
-        tcp_segment
-    ):
+    def register_flow(self, worker_ip, collector_ip, collector_port):
         """
-        Install a temporary forwarding rule.
+        Register worker activity for a training procedure.
         """
-
-        msg = of.ofp_flow_mod()
-
-        msg.match.dl_type = 0x0800
-        msg.match.nw_proto = 6
-
-        msg.match.nw_src = ip_packet.srcip
-        msg.match.nw_dst = ip_packet.dstip
-
-        msg.match.tp_src = tcp_segment.srcport
-        msg.match.tp_dst = tcp_segment.dstport
-
-        msg.idle_timeout = 30
-        msg.hard_timeout = 0
-        msg.priority = 100
-
-        #
-        # Temporary behavior:
-        # flood packets
-        #
-        msg.actions.append(
-            of.ofp_action_output(
-                port=of.OFPP_FLOOD
-            )
-        )
-
-        msg.data = event.ofp
-
-        self.connection.send(msg)
-
-    def register_flow(
-        self,
-        worker_ip,
-        collector_ip,
-        collector_port
-    ):
-        """
-        Register worker activity for a training.
-        """
-
         now = time.time()
 
         #
         # Create training if needed
         #
         if collector_ip not in training_state:
-
             training_state[collector_ip] = {
                 "workers": {},
                 "flows": [],
                 "first_seen": now,
                 "last_seen": now
             }
-
-            log.info(
-                "[NEW TRAINING] Collector=%s",
-                collector_ip
-            )
+            log.info("[NEW TRAINING] Collector=%s", collector_ip)
 
         training = training_state[collector_ip]
-
         training["last_seen"] = now
 
         #
         # Register worker
         #
         if worker_ip not in training["workers"]:
-
             training["workers"][worker_ip] = {
                 "collector_port": collector_port,
                 "first_seen": now,
                 "last_seen": now,
                 "flow_count": 0
             }
-
-            log.info(
-                "[NEW WORKER] %s joined training %s",
-                worker_ip,
-                collector_ip
-            )
+            log.info("[NEW WORKER] %s joined training %s", worker_ip, collector_ip)
 
         worker = training["workers"][worker_ip]
-
         worker["last_seen"] = now
         worker["flow_count"] += 1
 
@@ -165,95 +107,70 @@ class ProjectController(object):
         # Print current training state
         #
         log.info("====================================")
-        log.info(
-            "Training collector: %s",
-            collector_ip
-        )
-
-        log.info(
-            "Detected workers: %d",
-            len(training["workers"])
-        )
+        log.info("Training collector: %s", collector_ip)
+        log.info("Detected workers: %d", len(training["workers"]))
 
         for ip, info in training["workers"].items():
-
             log.info(
                 "Worker=%s CollectorPort=%s Flows=%d",
                 ip,
                 info["collector_port"],
                 info["flow_count"]
             )
-
         log.info("====================================")
 
     def _handle_PacketIn(self, event):
-
         packet = event.parsed
 
         if not packet:
             return
 
-        #
-        # IPv4 only
-        #
+        # 1. L2 LEARNING: Learn the port associated with the source MAC address
+        self.mac_to_port[packet.src] = event.port
+
+        # 2. DISCOVERY LOGIC
         ip_packet = packet.find("ipv4")
-
-        if ip_packet is None:
-            return
-
-        #
-        # TCP only
-        #
         tcp_segment = packet.find("tcp")
 
-        if tcp_segment is None:
-            return
+        # Process only IPv4 TCP traffic for discovery
+        if ip_packet is not None and tcp_segment is not None:
+            src_ip = str(ip_packet.srcip)
+            dst_ip = str(ip_packet.dstip)
 
-        worker_ip = str(ip_packet.srcip)
-        collector_ip = str(ip_packet.dstip)
+            # If the traffic is going from a Worker to a known Collector
+            if dst_ip in COLLECTORS:
+                self.register_flow(src_ip, dst_ip, tcp_segment.dstport)
 
-        collector_port = tcp_segment.dstport
+        # 3. FORWARDING LOGIC
+        msg = of.ofp_packet_out()
+        msg.data = event.ofp
 
-        #
-        # Ignore non-collector traffic
-        #
-        if collector_ip not in COLLECTORS:
-            return
+        # If we know the destination MAC's port, forward it directly
+        if packet.dst in self.mac_to_port:
+            out_port = self.mac_to_port[packet.dst]
+            msg.actions.append(of.ofp_action_output(port=out_port))
 
-        #
-        # Register flow
-        #
-        self.register_flow(
-            worker_ip,
-            collector_ip,
-            collector_port
-        )
+            # Install a temporary flow rule on the switch to offload the controller
+            fm = of.ofp_flow_mod()
+            fm.match.dl_dst = packet.dst
+            fm.match.dl_src = packet.src
+            fm.idle_timeout = 10  # Seconds before the rule expires
+            fm.hard_timeout = 0
+            fm.actions.append(of.ofp_action_output(port=out_port))
+            self.connection.send(fm)
 
-        #
-        # Install flow rule
-        #
-        #self.install_flow_rule(
-        #    event,
-        #   ip_packet,
-        #    tcp_segment
-        #)
+        else:
+            # If destination is unknown (e.g., initial ARP requests), flood the packet
+            msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+
+        self.connection.send(msg)
 
 
 def start_switch(event):
-
-    log.info(
-        "Controller attached to switch %s",
-        event.dpid
-    )
-
+    log.info("Controller attached to switch %s", event.dpid)
     ProjectController(event.connection)
 
 
 def launch():
-
     log.info("Project1 SDN controller started")
-
-    core.openflow.addListenerByName(
-        "ConnectionUp",
-        start_switch
-    )
+    core.openflow.addListenerByName("ConnectionUp", start_switch)
