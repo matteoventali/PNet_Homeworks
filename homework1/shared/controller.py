@@ -13,7 +13,7 @@ class IncastController(object):
     for distributed machine learning training procedures.
     """
     def __init__(self):
-        # Dictionary to store discovered trainings: { (collector_ip, port): set(worker_ips) }
+        # Dictionary to store discovered trainings
         self.trainings = {}
         
         # Defined collector IPs as per project modification
@@ -35,12 +35,26 @@ class IncastController(object):
                  len(event.switches), len(event.adjacency))
         log.info("Traffic generation can now safely begin.")
 
+    def _print_trainings_state(self):
+        """
+        Prints the current state of discovered trainings in an ordered format.
+        """
+        log.info("=== Current Discovered Trainings ===")
+        for collector in sorted(self.trainings.keys()):
+            workers = sorted(list(self.trainings[collector]))
+            log.info("%s -> %s", collector, workers)
+        log.info("====================================")
+
     def _handle_PacketIn(self, event):
         """
         Handles incoming packets to discover workers participating in training procedures.
         """
         packet = event.parsed
         if not packet.parsed:
+            return
+
+        if packet.find('arp'):
+            self._flood_packet(event)
             return
 
         ip_packet = packet.find('ipv4')
@@ -57,18 +71,17 @@ class IncastController(object):
             src_ip = str(ip_packet.srcip)
 
             if dst_ip in self.collectors:
-                # Identification of the training procedure via (Collector IP, Port) [cite: 1]
-                training_key = (dst_ip, dst_port)
+                # Identification of the training procedure via (Collector IP)
+                training_key = (dst_ip)
                 
                 if training_key not in self.trainings:
                     self.trainings[training_key] = set()
                 
                 if src_ip not in self.trainings[training_key]:
                     self.trainings[training_key].add(src_ip)
-                    log.info("WORKER DISCOVERED: Node %s joined training @ %s:%s", 
-                             src_ip, dst_ip, dst_port)
-                    log.info("Group '%s:%s' now has %d workers.", 
-                             dst_ip, dst_port, len(self.trainings[training_key]))
+                    log.info("WORKER DISCOVERED: Node %s joined training @ %s", src_ip, dst_ip)
+                    self._print_trainings_state()
+                    
 
         # For the discovery phase, we allow basic connectivity (flooding)
         # This ensures TCP handshakes can complete.
@@ -82,7 +95,6 @@ class IncastController(object):
         msg.data = event.ofp
         msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
         event.connection.send(msg)
-
 
 
 def launch():
