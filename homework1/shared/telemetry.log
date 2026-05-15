@@ -1,9 +1,14 @@
-=============================================
-              GLOBAL LINK LOAD
----------------------------------------------
-  Switch S1 Load: To S6: 0.0 Mbps | To S7: 0.0 Mbps
-  Switch S2 Load: To S7: 0.0 Mbps | To S6: 0.0 Mbps
-  Switch S3 Load: To S6: 0.0 Mbps | To S7: 0.0 Mbps
-  Switch S4 Load: To S6: 0.0 Mbps | To S7: 0.0 Mbps
-  Switch S5 Load: To S6: 0.0 Mbps | To S7: 0.0 Mbps
-=============================================
+========================================================================
+                           GLOBAL LINK LOAD
+------------------------------------------------------------------------
+  (S1, S6) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S1, S7) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S2, S7) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S2, S6) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S3, S6) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S3, S7) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S4, S6) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S4, S7) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S5, S6) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+  (S5, S7) -> Upstream:   0.0 Mbps | Downstream:   0.0 Mbps
+========================================================================

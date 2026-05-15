@@ -84,35 +84,53 @@ class IncastController(EventMixin):
         for stat in event.stats:
             if stat.port_no >= of.OFPP_MAX: continue
             
-            # Computing the bit rate for each port
             key = (dpid, stat.port_no)
-            current_bytes = stat.tx_bytes + stat.rx_bytes
+            current_tx = stat.tx_bytes
+            current_rx = stat.rx_bytes
+            
             if key in self.port_stats:
-                delta_bytes = current_bytes - self.port_stats[key]
-                mbps = (delta_bytes * 8) / (self.POLLING_INTERVAL * 1e6)
-                self.link_load[key] = mbps
-            self.port_stats[key] = current_bytes
-        
+                old_tx, old_rx = self.port_stats[key]
+                
+                delta_tx = current_tx - old_tx
+                delta_rx = current_rx - old_rx
+                
+                tx_mbps = (delta_tx * 8) / (self.POLLING_INTERVAL * 1e6)
+                rx_mbps = (delta_rx * 8) / (self.POLLING_INTERVAL * 1e6)
+                
+                # Salviamo una tupla: (Upstream, Downstream)
+                self.link_load[key] = (tx_mbps, rx_mbps)
+                
+            # Aggiorniamo la memoria per il prossimo ciclo salvando la tupla
+            self.port_stats[key] = (current_tx, current_rx)
+
     def _print_global_link_utilization(self):
         lines = []
         
         for dpid in sorted(self.adjacency.keys()):
+            # Ci posizioniamo dal punto di vista dei Leaf
             is_spine = len(self.edge_ports.get(dpid, set())) == 0
             if is_spine: continue 
 
-            link_reports = []
             for neighbor_dpid, port_no in self.adjacency.get(dpid, {}).items():
-                load = self.link_load.get((dpid, port_no), 0.0)
-                link_reports.append(f"To S{neighbor_dpid}: {load:.1f} Mbps")
-            if link_reports:
-                lines.append(f"  Switch S{dpid} Load: " + " | ".join(link_reports))
+                # Recuperiamo la tupla (tx_mbps, rx_mbps). Se non c'è, usiamo (0.0, 0.0)
+                load = self.link_load.get((dpid, port_no), (0.0, 0.0))
+                
+                # Prevenzione errori: se in memoria c'è rimasto un vecchio float
+                if isinstance(load, tuple):
+                    up_mbps, down_mbps = load
+                else:
+                    up_mbps, down_mbps = 0.0, 0.0
+                
+                # Aggiungiamo la riga formattata
+                lines.append(f"  (S{dpid}, S{neighbor_dpid}) -> Upstream: {up_mbps:>5.1f} Mbps | Downstream: {down_mbps:>5.1f} Mbps")
         
         if lines:
-            block = "="*45 + "\n"
-            block += "              GLOBAL LINK LOAD\n"
-            block += "-"*45 + "\n"
+            # Abbiamo allargato un po' i bordi per contenere la nuova stringa più lunga
+            block = "="*72 + "\n"
+            block += "                           GLOBAL LINK LOAD\n"
+            block += "-"*72 + "\n"
             block += "\n".join(lines) + "\n"
-            block += "="*45 + "\n"
+            block += "="*72 + "\n"
             
             self.telemetry_log.info(block)
             with open("/shared/telemetry.log", "w") as f:
