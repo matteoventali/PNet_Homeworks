@@ -41,7 +41,7 @@ class IncastController(EventMixin):
         
         # Dedicated File Loggers
         self.discovery_log = setup_file_logger("discovery", "/shared/discovery.log")
-        self.telemetry_log = setup_file_logger("telemetry", "/shared/telemetry.log")
+        self.telemetry_log = setup_file_logger("telemetry", "/shared/persistent_telemetry.log")
         self.state_log = setup_file_logger("state", "/shared/state.log")
 
         self.collector_dpid_map = {} # Map collector -> dpid
