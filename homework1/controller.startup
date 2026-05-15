@@ -1,3 +1,5 @@
 ip address add 20.0.1.100/24 dev eth0
 
 ln -s /shared/*.py /pox/ext/
+ln -s /shared/start_controller.sh /start_controller.sh
+chmod 755 /shared/start_controller.sh

@@ -68,18 +68,32 @@ class IncastOptimizer(object):
             w_mac = ip_to_mac.get(w_ip)
             if not w_mac: continue
             
-            # Identifichiamo il Leaf switch del worker
+            # Identifichiamo il Leaf switch del worker e del collector
             leaf_dpid, _ = ctrl.mac_to_location.get(w_mac, (None, None))
-            if not leaf_dpid: continue
+            collector_dpid = ctrl.collector_dpid_map.get(c_ip)
             
-            # Porta verso lo Spine scelto
-            out_port = ctrl.adjacency.get(leaf_dpid, {}).get(spine_dpid)
+            if not leaf_dpid or not collector_dpid: continue
+
+            # FIX 1: Prevenzione Routing Loop
+            # Se Worker e Collector sono sullo stesso switch, il traffico è locale.
+            # Non ha senso mandarlo agli Spine, quindi saltiamo l'ottimizzazione per questo worker.
+            if leaf_dpid == collector_dpid:
+                continue
             
-            if out_port:
-                self._install_high_priority_rule(leaf_dpid, w_ip, c_ip, out_port)
+            # FIX 2a: Installazione regola sull'Ingress Leaf (verso lo Spine)
+            out_port_leaf = ctrl.adjacency.get(leaf_dpid, {}).get(spine_dpid)
+            if out_port_leaf:
+                self._install_high_priority_rule(leaf_dpid, w_ip, c_ip, out_port_leaf)
+                count += 1
+
+            # FIX 2b: Installazione regola sullo Spine scelto (verso l'Egress Leaf)
+            # Questo evita i "PacketIn" intermedi e previene l'azzeramento dei contatori
+            out_port_spine = ctrl.adjacency.get(spine_dpid, {}).get(collector_dpid)
+            if out_port_spine:
+                self._install_high_priority_rule(spine_dpid, w_ip, c_ip, out_port_spine)
                 count += 1
         
-        log.info("[OPTIMIZER] Installate %d regole di flusso granulari.\n", count)
+        log.info("[OPTIMIZER] Installate %d regole di flusso granulari (End-to-End).\n", count)
 
     def _install_high_priority_rule(self, dpid, src, dst, port):
         msg = of.ofp_flow_mod()

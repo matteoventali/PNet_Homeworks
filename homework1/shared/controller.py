@@ -7,7 +7,18 @@ import topology_discovery
 import logging
 import json
 
+# Standard POX Logger
 log = core.getLogger()
+
+# Setup logger files
+def setup_file_logger(name, filename):
+    handler = logging.FileHandler(filename, mode='w')
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
 
 class OptimizationRequired(Event):
     def __init__(self, procedures):
@@ -17,16 +28,8 @@ class OptimizationRequired(Event):
 class IncastController(EventMixin):
     _eventMixin_events = set([OptimizationRequired])
 
-    def __init__(self, 
-                 collectors=[],
-                 polling_interval=1.0, 
-                 silence_threshold=8.0,
-                 inactivity_coefficient = 2,
-                 min_traffic_delta=15000, 
-                 alpha_ewma=1,
-                 log_discovery=True,
-                 log_polling=True,
-                 log_state=True
+    def __init__(self, collectors=[], polling_interval=1.0, silence_threshold=8.0,
+                 inactivity_coefficient=2, min_traffic_delta=15000, alpha_ewma=1,
                 ):
         
         self.collectors = collectors
@@ -35,48 +38,92 @@ class IncastController(EventMixin):
         self.SILENCE_THRESHOLD = float(silence_threshold)
         self.MIN_TRAFFIC_DELTA = int(min_traffic_delta)
         self.ALPHA_EWMA = float(alpha_ewma)
-        self.log_discovery = log_discovery
-        self.log_polling = log_polling
-        self.log_state = log_state
+        
+        # Dedicated File Loggers
+        self.discovery_log = setup_file_logger("discovery", "/shared/discovery.log")
+        self.telemetry_log = setup_file_logger("telemetry", "/shared/telemetry.log")
+        self.state_log = setup_file_logger("state", "/shared/state.log")
 
-        self.collector_dpid_map = {} 
-        self.procedures = {} 
-        self.adjacency = {}       
-        self.edge_ports = {}      
-        self.mac_to_location = {} 
-        self.mac_to_ip = {}
-        self.shortest_paths = {}
-        self.start_time = time.time()  
+        self.collector_dpid_map = {} # Map collector -> dpid
+        self.procedures = {} # Procedures dictionary
+        self.adjacency = {}  # Graph representation
+        self.edge_ports = {} # (dpid, port) that are edges in the topology (not connected to other switches)
+        self.mac_to_location = {} # Map mac -> (dpid, port)
+        self.mac_to_ip = {} # Map mac -> ip address
+        self.shortest_paths = {} # Shortest paths
+        self.start_time = time.time() # Global start time clock for the controller
+        
+        # Telemetry for Link Utilization
+        self.port_stats = {}
+        self.link_load = {}
         
         core.openflow.addListeners(self)
         core.TopologyDiscovery.addListenerByName("TopologyStable", self._handle_TopologyStable)
         Timer(self.POLLING_INTERVAL, self._request_stats, recurring=True)
-        log.info("IncastController (Telemetry + ECMP) started.")
+        
+        log.info("Monitoring component started")
 
     def _request_stats(self):
+        # Requesting stats to leaf switches connected to collectors
         target_dpids = set(self.collector_dpid_map.values())
         for dpid in target_dpids:
             connection = core.openflow.getConnection(dpid)
             if connection:
                 connection.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
+        
+        # Requesting port stats to all the switches
+        for connection in core.openflow.connections:
+            connection.send(of.ofp_stats_request(body=of.ofp_port_stats_request()))
+
+    def _handle_PortStatsReceived(self, event):
+        dpid = event.connection.dpid
+        
+        # Analyzing each stats received
+        for stat in event.stats:
+            if stat.port_no >= of.OFPP_MAX: continue
+            
+            # Computing the bit rate for each port
+            key = (dpid, stat.port_no)
+            current_bytes = stat.tx_bytes + stat.rx_bytes
+            if key in self.port_stats:
+                delta_bytes = current_bytes - self.port_stats[key]
+                mbps = (delta_bytes * 8) / (self.POLLING_INTERVAL * 1e6)
+                self.link_load[key] = mbps
+            self.port_stats[key] = current_bytes
+        
+        self._print_link_utilization(dpid)
+
+    def _print_link_utilization(self, dpid):
+        # Printing only link utilization for leaf switches
+        is_spine = len(self.edge_ports.get(dpid, set())) == 0
+        if is_spine: return
+
+        # Preparing the log message
+        link_reports = []
+        for neighbor_dpid, port_no in self.adjacency.get(dpid, {}).items():
+            load = self.link_load.get((dpid, port_no), 0.0)
+            #if load > 0.1:
+            link_reports.append(f"To S{neighbor_dpid}: {load:.1f} Mbps")
+        
+        if link_reports:
+            self.telemetry_log.info("[MONITOR] Switch S%d Load: %s", dpid, " | ".join(link_reports))
 
     def _handle_FlowStatsReceived(self, event):
-        dpid = event.connection.dpid # Switch from which we have received the event
+        dpid = event.connection.dpid
         current_time = time.time() - self.start_time
-        procedure_deltas = {dst_ip: 0 for dst_ip in self.procedures} # Dictionary to measure the deltas of traffic for each collector
+        procedure_deltas = {dst_ip: 0 for dst_ip in self.procedures}
 
-        # Computing the deltas
         for stat in event.stats:
             match = stat.match
-
-            # Extracting ip addresses involved in the match
+            
+            # Extracting src and dst ip addresses from the match
             if not match.dl_src or not match.dl_dst: continue
             src_ip = self.mac_to_ip.get(match.dl_src)
             dst_ip = self.mac_to_ip.get(match.dl_dst)
             if not src_ip or not dst_ip: continue
-
-            # If we're considering a match of traffic for the collector
-            # and we have received the stats from the egress point (switch directly connected to the collector)
+            
+            # Considering only stats related to switches connected to collectors
+            # and considering flows only directed to collectors
             if dst_ip in self.procedures and self.collector_dpid_map.get(dst_ip) == dpid:
                 proc = self.procedures[dst_ip]
                 last_bytes = proc['flow_byte_trackers'].get(src_ip, 0)
@@ -84,58 +131,55 @@ class IncastController(EventMixin):
                 proc['flow_byte_trackers'][src_ip] = stat.byte_count
                 procedure_deltas[dst_ip] += delta
 
-        # Updating the procedures data
+        # Analyzing deltas of traffic
         for dst_ip, delta in procedure_deltas.items():
             if self.collector_dpid_map.get(dst_ip) != dpid: continue
+            
             proc = self.procedures[dst_ip]
-
+            
+            # If significative traffic amount detected
             if delta > self.MIN_TRAFFIC_DELTA:
                 proc['last_traffic_time'] = current_time
                 proc['accumulated_bytes'] += delta
                 
+                # Transition from INIT to BURST state
                 if proc['state'] == 'INIT':
                     proc['state'] = 'BURST'
                     proc['last_round_start'] = current_time
-                    proc['phi'] = current_time # Initial phase detection
-                    if self.log_polling: 
-                        log.info("[%s] Round 1 started (Phase phi_v: %.2f)", dst_ip, proc['phi'])
+                    proc['phi'] = current_time
+                    self.telemetry_log.info("[%s] Round 1 started (Phase phi_v: %.2f)", dst_ip, proc['phi'])
                 
+                # Transition from SILENCE to BURST state
                 elif proc['state'] == 'SILENCE':
                     proc['state'] = 'BURST'
-                    
-                    # Tv = Time between the start of consecutive rounds
                     measured_period = current_time - proc['last_round_start']
                     proc['Tv'] = measured_period if proc['Tv'] == 0 else (1 - self.ALPHA_EWMA) * proc['Tv'] + self.ALPHA_EWMA * measured_period
                     proc['last_round_start'] = current_time
                     proc['round_number'] += 1
+                    self.telemetry_log.info("[%s] Round %d started (Tv: %.2f)", dst_ip, proc['round_number'], proc['Tv'])
                     
-                    if self.log_polling: 
-                        log.info("[%s] Round %d started (Tv: %.2f)", dst_ip, proc['round_number'], proc['Tv'])
-                    
+                    # We need to recompute the routes
                     if proc['round_number'] >= 2:
                         self.raiseEvent(OptimizationRequired(self.procedures))
             else:
+                # Transition from BURST to SILENCE
                 if proc['state'] == 'BURST' and (current_time - proc['last_traffic_time']) > self.SILENCE_THRESHOLD:
                     proc['state'] = 'SILENCE'
-                    # Dv = Total burst bytes / number of active workers
                     active_workers = len(proc['workers'])
                     m_dv = (proc['accumulated_bytes'] * 8 / 1e6) / active_workers if active_workers else 0
                     proc['Dv'] = m_dv if proc['Dv'] == 0 else (1 - self.ALPHA_EWMA) * proc['Dv'] + self.ALPHA_EWMA * m_dv
                     proc['accumulated_bytes'] = 0 
-
-                    if self.log_state: 
-                        self._print_procedures_state()
-
-                elif proc['state'] == 'SILENCE' and proc['Tv'] > 0: # We're silent and we have not detected traffic
-                    # Computing the amount of time since the last traffic time
+                    self._print_procedures_state()
+                
+                # Transition from SILENCE to DEAD (removed from procedures)
+                elif proc['state'] == 'SILENCE' and proc['Tv'] > 0:
                     measured_period = current_time - proc['last_traffic_time']
-
-                    # If this silence interval is too much we declare the procedure dead
                     if measured_period > (proc['Tv'] * self.INACTIVITY_COEFFICIENT):
-                        log.info("[LIFECYCLE] Dead procedure %s", dst_ip)
+                        self.discovery_log.info("[LIFECYCLE] Dead procedure %s", dst_ip)
                         del self.procedures[dst_ip]
+
+                        # We need to recompute the routes
                         self.raiseEvent(OptimizationRequired(self.procedures))
-                    
 
     def _handle_TopologyStable(self, event):
         for s in event.switches:
@@ -144,13 +188,15 @@ class IncastController(EventMixin):
             if conn:
                 for p in conn.ports.values():
                     if p.port_no < of.OFPP_MAX: self.edge_ports[s].add(p.port_no)
+        
+        # Creating the adjacency matrix representing the graph
         for d1, p1, d2, p2 in event.adjacency:
             self.adjacency[d1][d2], self.adjacency[d2][d1] = p1, p2
             if p1 in self.edge_ports[d1]: self.edge_ports[d1].remove(p1)
             if p2 in self.edge_ports[d2]: self.edge_ports[d2].remove(p2)
-            
+        
+        # Precomputing the shortest paths
         self._precompute_paths()
-        log.info("[ROUTING] All-pairs shortest paths pre-computed for ECMP.")
 
     def _precompute_paths(self):
         switches = list(self.adjacency.keys())
@@ -173,57 +219,54 @@ class IncastController(EventMixin):
         return paths
 
     def _handle_PacketIn(self, event):
-        # Checking if the packet is valid
+        # We have to manage only ipv4 and arp messages
         packet = event.parsed
         if not packet.parsed or not (packet.find('ipv4') or packet.find('arp')): return
         
-        # Learning the mac address location from the packet received
+        # Memorizing the mac location
         self._learn_mac(packet.src, event.dpid, event.port)
         
-        # Dispatching the packet
+        # Understanding the packet
         ip_p = packet.find('ipv4')
         arp_p = packet.find('arp')
 
-        # Mapping the collector position
-        if ip_p: # When it is an ip packet we extract ip.src and ip.dst
+        # Learning the collector position
+        if ip_p:
             src_i, dst_i = str(ip_p.srcip), str(ip_p.dstip)
             self.mac_to_ip[packet.src], self.mac_to_ip[packet.dst] = src_i, dst_i
-            
             if src_i in self.collectors and src_i not in self.collector_dpid_map:
                 if event.port in self.edge_ports.get(event.dpid, set()):
                     self.collector_dpid_map[src_i] = event.dpid
-        elif arp_p: # When it is an arp packet we extract protosrc and protodst of the arp reply
+        elif arp_p:
             src_i, dst_i = str(arp_p.protosrc), str(arp_p.protodst)
             self.mac_to_ip[packet.src], self.mac_to_ip[packet.dst] = src_i, dst_i
-            
             if src_i in self.collectors and src_i not in self.collector_dpid_map:
                 if event.port in self.edge_ports.get(event.dpid, set()):
-                    self.collector_dpid_map[src_i] = event.dpid
-
-        # Processing the packet
-        if packet.find('arp'):
+                   self.collector_dpid_map[src_i] = event.dpid
+        
+        # Dispatching the packet
+        if arp_p:
             self._process_arp(packet, event)
-        elif packet.find('ipv4') and packet.find('tcp'): 
+        elif ip_p and packet.find('tcp'): 
             self._process_worker_discovery(packet)
             self._forward_packet(packet, event)
 
     def _process_arp(self, packet, event):
-        if packet.dst.isMulticast(): # ARP request (destination address is broadcast)
+        if packet.dst.isMulticast(): # ARP request
             self._smart_flood(packet, event)
-        else:   # ARP response
+        else: # ARP reply
             self._forward_packet(packet, event)
 
     def _process_worker_discovery(self, packet):
-        # Extracting info from the packet
+        # Extracting info from the ip packet
         ip_p = packet.find('ipv4')
         dst_i, src_i = str(ip_p.dstip), str(ip_p.srcip)
         
-        # We have to analyze only traffic for a collector
+        # We must consider only traffic destinated to the collectors
         if dst_i not in self.collectors: return
-        
-        # Estimating the phi value
+
+        # Memorizing/updating the procedure parameters
         cur = time.time() - self.start_time
-        
         if dst_i not in self.procedures:
             self.procedures[dst_i] = {'workers': {src_i}, 
                                       'phi': cur, 
@@ -234,7 +277,7 @@ class IncastController(EventMixin):
                                       'last_traffic_time': cur, 
                                       'accumulated_bytes': 0, 
                                       'flow_byte_trackers': {}}
-            if self.log_discovery: log.info("[DISCOVERY] %s: New procedure.", dst_i)
+            self.discovery_log.info("[DISCOVERY] %s: New procedure.", dst_i)
         else:
             self.procedures[dst_i]['workers'].add(src_i)
             
@@ -245,67 +288,57 @@ class IncastController(EventMixin):
     def _forward_packet(self, packet, event):
         ip_p = packet.find('ipv4')
         
-        # 1. Controlliamo se conosciamo la destinazione
+        # If we know the destination location
         if packet.dst in self.mac_to_location:
             dst_dpid, dst_port = self.mac_to_location[packet.dst]
             
-            # Scenario A: Il destinatario è già su questo switch
             if event.dpid == dst_dpid: 
                 self._install_flow(packet, event.connection, dst_port)
                 self._send_packet_out(event, dst_port)
                 return
-
-            # Scenario B: Dobbiamo attraversare la rete
+            
+            # The packet must go trough another switch
             paths = self.shortest_paths.get(event.dpid, {}).get(dst_dpid, [])
             if paths:
-                # Scegliamo il percorso con ECMP (IP o MAC come fallback per ARP)
+                
+                # Choosing a path as a temporary route
                 if ip_p:
                     path_idx = hash(str(ip_p.srcip) + str(ip_p.dstip)) % len(paths)
                 else:
                     path_idx = hash(str(packet.src) + str(packet.dst)) % len(paths)
-                    
                 chosen_path = paths[path_idx]
                 
-                # --- INSTALLAZIONE END-TO-END ---
-                # Installiamo le regole su tutti gli switch intermedi (es. Leaf -> Spine)
+                # Installing the path
                 for i in range(len(chosen_path) - 1):
                     current_dpid = chosen_path[i]
                     next_dpid = chosen_path[i+1]
                     out_port = self.adjacency[current_dpid][next_dpid]
-                    
                     conn = core.openflow.getConnection(current_dpid)
-                    if conn:
-                        self._install_flow(packet, conn, out_port)
-                        
-                # Installiamo la regola sull'ULTIMO switch
+                    if conn: self._install_flow(packet, conn, out_port)
+                
                 dest_conn = core.openflow.getConnection(dst_dpid)
-                if dest_conn:
-                    self._install_flow(packet, dest_conn, dst_port)
-                    
-                # Infine, "spingiamo" fuori fisicamente il pacchetto che era rimasto bloccato nel primo switch
+                if dest_conn: self._install_flow(packet, dest_conn, dst_port)
                 first_out_port = self.adjacency[event.dpid][chosen_path[1]]
                 self._send_packet_out(event, first_out_port)
             else:
-                log.warning("Nessun percorso trovato da %s a %s", event.dpid, dst_dpid)
+                log.warning("No path from %s to %s", event.dpid, dst_dpid)
         else: 
-            # Non sappiamo dove sia la destinazione, facciamo flooding
             self._smart_flood(packet, event)
 
     def _install_flow(self, packet, connection, port):
-        """Installa una regola OpenFlow su una specifica connessione (Switch)."""
         msg = of.ofp_flow_mod(priority=10, idle_timeout=60)
         msg.match.dl_src, msg.match.dl_dst = packet.src, packet.dst
         msg.actions.append(of.ofp_action_output(port=port))
         connection.send(msg)
         
     def _send_packet_out(self, event, port):
-        """Invia un singolo pacchetto fuori dallo switch che ha generato il PacketIn."""
         msg = of.ofp_packet_out(data=event.ofp)
         msg.in_port = event.port
         msg.actions.append(of.ofp_action_output(port=port))
         event.connection.send(msg)
 
     def _smart_flood(self, packet, event):
+        # Flooding the packet only on edges ports (ports not attached to other switches)
         raw = event.ofp.data
         for dpid, ports in self.edge_ports.items():
             conn = core.openflow.getConnection(dpid)
@@ -314,34 +347,29 @@ class IncastController(EventMixin):
             if actions: conn.send(of.ofp_packet_out(data=raw, actions=actions))
 
     def _print_procedures_state(self):
-        log.info("--- PROCEDURES STATE ---")
+        self.state_log.info("--- PROCEDURES STATE ---")
         for c in sorted(self.procedures.keys()):
             p = self.procedures[c]
-            log.info("%s | R:%d | K:%d | Dv:%.1f | Tv:%.1f | phi:%.1f", c, p['round_number'], len(p['workers']), p['Dv'], p['Tv'], p['phi'])
-
+            self.state_log.info("%s | R:%d | K:%d | Dv:%.1f | Tv:%.1f | phi:%.1f", c, p['round_number'], len(p['workers']), p['Dv'], p['Tv'], p['phi'])
 
 # Entry point
-def launch(polling_interval=1.0, silence_threshold=8.0, alpha_ewma=0.8,
-           log_discovery=True, log_polling=True, log_state=True):
-    
-    # Disabling useless log messages
+def launch(polling_interval=1.0, silence_threshold=8.0, inactivity_coefficient=2, alpha_ewma=1):
+    # Hiding useless logs
     logging.getLogger("openflow.discovery").setLevel(logging.CRITICAL)
     logging.getLogger("packet").setLevel(logging.CRITICAL)
     
-    # Launching the topology_discovery component
+    # Launching topology discovery component
     topology_discovery.launch()
 
-    # Reading the controller set
+    # Fetching the collector_set 
     with open('/shared/set_collector.json', 'r') as file:
         collector_set = json.load(file)["collectors"]
     
+    # Registering the component
     core.registerNew(IncastController, 
-                        collectors = collector_set,
-                        polling_interval=polling_interval, 
-                        silence_threshold=silence_threshold, 
-                        min_traffic_delta=15000, 
-                        alpha_ewma=alpha_ewma,
-                        log_discovery=log_discovery,
-                        log_polling=log_polling,
-                        log_state=log_state
+                     collectors=collector_set, 
+                     polling_interval=polling_interval, 
+                     silence_threshold=silence_threshold, 
+                     inactivity_coefficient=inactivity_coefficient, 
+                     alpha_ewma=alpha_ewma
                     )
