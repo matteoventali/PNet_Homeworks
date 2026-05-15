@@ -1,8 +1,5 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-from pox.lib.packet.ipv4 import ipv4
-from pox.lib.packet.tcp import tcp
-from pox.lib.packet.arp import arp
 from pox.lib.revent import Event, EventMixin
 from pox.lib.recoco import Timer
 import time
@@ -23,7 +20,8 @@ class IncastController(EventMixin):
     def __init__(self, 
                  collectors=[],
                  polling_interval=1.0, 
-                 silence_threshold=8.0, 
+                 silence_threshold=8.0,
+                 inactivity_coefficient = 2,
                  min_traffic_delta=15000, 
                  alpha_ewma=1,
                  log_discovery=True,
@@ -32,6 +30,7 @@ class IncastController(EventMixin):
                 ):
         
         self.collectors = collectors
+        self.INACTIVITY_COEFFICIENT = float(inactivity_coefficient)
         self.POLLING_INTERVAL = float(polling_interval)
         self.SILENCE_THRESHOLD = float(silence_threshold)
         self.MIN_TRAFFIC_DELTA = int(min_traffic_delta)
@@ -46,7 +45,7 @@ class IncastController(EventMixin):
         self.edge_ports = {}      
         self.mac_to_location = {} 
         self.mac_to_ip = {}
-        self.shortest_paths = {}  # Pre-computed switch-to-switch paths
+        self.shortest_paths = {}
         self.start_time = time.time()  
         
         core.openflow.addListeners(self)
@@ -66,6 +65,7 @@ class IncastController(EventMixin):
         current_time = time.time() - self.start_time
         procedure_deltas = {dst_ip: 0 for dst_ip in self.procedures} # Dictionary to measure the deltas of traffic for each collector
 
+        # Computing the deltas
         for stat in event.stats:
             match = stat.match
 
@@ -84,6 +84,7 @@ class IncastController(EventMixin):
                 proc['flow_byte_trackers'][src_ip] = stat.byte_count
                 procedure_deltas[dst_ip] += delta
 
+        # Updating the procedures data
         for dst_ip, delta in procedure_deltas.items():
             if self.collector_dpid_map.get(dst_ip) != dpid: continue
             proc = self.procedures[dst_ip]
@@ -121,9 +122,20 @@ class IncastController(EventMixin):
                     m_dv = (proc['accumulated_bytes'] * 8 / 1e6) / active_workers if active_workers else 0
                     proc['Dv'] = m_dv if proc['Dv'] == 0 else (1 - self.ALPHA_EWMA) * proc['Dv'] + self.ALPHA_EWMA * m_dv
                     proc['accumulated_bytes'] = 0 
-                    
+
                     if self.log_state: 
                         self._print_procedures_state()
+
+                elif proc['state'] == 'SILENCE' and proc['Tv'] > 0: # We're silent and we have not detected traffic
+                    # Computing the amount of time since the last traffic time
+                    measured_period = current_time - proc['last_traffic_time']
+
+                    # If this silence interval is too much we declare the procedure dead
+                    if measured_period > (proc['Tv'] * self.INACTIVITY_COEFFICIENT):
+                        log.info("[LIFECYCLE] Dead procedure %s", dst_ip)
+                        del self.procedures[dst_ip]
+                        self.raiseEvent(OptimizationRequired(self.procedures))
+                    
 
     def _handle_TopologyStable(self, event):
         for s in event.switches:
