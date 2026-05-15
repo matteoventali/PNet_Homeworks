@@ -8,6 +8,7 @@ from pox.lib.recoco import Timer
 import time
 import topology_discovery
 import logging
+import json
 
 log = core.getLogger()
 
@@ -20,14 +21,15 @@ class IncastController(EventMixin):
     _eventMixin_events = set([OptimizationRequired])
 
     def __init__(self, 
-                 collectors=["10.0.1.1", "10.0.1.2", "10.0.1.3", "10.0.1.4"],
+                 collectors=[],
                  polling_interval=1.0, 
                  silence_threshold=8.0, 
                  min_traffic_delta=15000, 
                  alpha_ewma=1,
                  log_discovery=True,
                  log_polling=True,
-                 log_state=True):
+                 log_state=True
+                ):
         
         self.collectors = collectors
         self.POLLING_INTERVAL = float(polling_interval)
@@ -168,15 +170,25 @@ class IncastController(EventMixin):
         
         # Dispatching the packet
         ip_p = packet.find('ipv4')
-        if ip_p:
+        arp_p = packet.find('arp')
+
+        # Mapping the collector position
+        if ip_p: # When it is an ip packet we extract ip.src and ip.dst
             src_i, dst_i = str(ip_p.srcip), str(ip_p.dstip)
             self.mac_to_ip[packet.src], self.mac_to_ip[packet.dst] = src_i, dst_i
             
-            # Mapping the collector position
             if src_i in self.collectors and src_i not in self.collector_dpid_map:
                 if event.port in self.edge_ports.get(event.dpid, set()):
                     self.collector_dpid_map[src_i] = event.dpid
-        
+        elif arp_p: # When it is an arp packet we extract protosrc and protodst of the arp reply
+            src_i, dst_i = str(arp_p.protosrc), str(arp_p.protodst)
+            self.mac_to_ip[packet.src], self.mac_to_ip[packet.dst] = src_i, dst_i
+            
+            if src_i in self.collectors and src_i not in self.collector_dpid_map:
+                if event.port in self.edge_ports.get(event.dpid, set()):
+                    self.collector_dpid_map[src_i] = event.dpid
+
+        # Processing the packet
         if packet.find('arp'):
             self._process_arp(packet, event)
         elif packet.find('ipv4') and packet.find('tcp'): 
@@ -213,8 +225,6 @@ class IncastController(EventMixin):
             if self.log_discovery: log.info("[DISCOVERY] %s: New procedure.", dst_i)
         else:
             self.procedures[dst_i]['workers'].add(src_i)
-
-        if self.log_discovery: log.info("[DISCOVERY] Worker set for %s: %s", dst_i, self.procedures[dst_i]['workers'])
             
     def _learn_mac(self, mac, dpid, port):
         if mac not in self.mac_to_location: 
@@ -298,22 +308,28 @@ class IncastController(EventMixin):
             log.info("%s | R:%d | K:%d | Dv:%.1f | Tv:%.1f | phi:%.1f", c, p['round_number'], len(p['workers']), p['Dv'], p['Tv'], p['phi'])
 
 
-
-def str_to_bool(val):
-    return str(val).lower() in ("yes", "true", "t", "1")
-
+# Entry point
 def launch(polling_interval=1.0, silence_threshold=8.0, alpha_ewma=0.8,
            log_discovery=True, log_polling=True, log_state=True):
     
+    # Disabling useless log messages
     logging.getLogger("openflow.discovery").setLevel(logging.CRITICAL)
     logging.getLogger("packet").setLevel(logging.CRITICAL)
     
+    # Launching the topology_discovery component
     topology_discovery.launch()
+
+    # Reading the controller set
+    with open('/shared/set_collector.json', 'r') as file:
+        collector_set = json.load(file)["collectors"]
+    
     core.registerNew(IncastController, 
-                     polling_interval=polling_interval, 
-                     silence_threshold=silence_threshold, 
-                     min_traffic_delta=15000, 
-                     alpha_ewma=alpha_ewma,
-                     log_discovery=str_to_bool(log_discovery),
-                     log_polling=str_to_bool(log_polling),
-                     log_state=str_to_bool(log_state))
+                        collectors = collector_set,
+                        polling_interval=polling_interval, 
+                        silence_threshold=silence_threshold, 
+                        min_traffic_delta=15000, 
+                        alpha_ewma=alpha_ewma,
+                        log_discovery=log_discovery,
+                        log_polling=log_polling,
+                        log_state=log_state
+                    )
