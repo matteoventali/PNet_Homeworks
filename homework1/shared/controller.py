@@ -64,6 +64,8 @@ class IncastController(EventMixin):
         log.info("Monitoring component started")
 
     def _request_stats(self):
+        self._print_global_link_utilization()
+        
         # Requesting stats to leaf switches connected to collectors
         target_dpids = set(self.collector_dpid_map.values())
         for dpid in target_dpids:
@@ -91,22 +93,30 @@ class IncastController(EventMixin):
                 self.link_load[key] = mbps
             self.port_stats[key] = current_bytes
         
-        self._print_link_utilization(dpid)
-
-    def _print_link_utilization(self, dpid):
-        # Printing only link utilization for leaf switches
-        is_spine = len(self.edge_ports.get(dpid, set())) == 0
-        if is_spine: return
-
-        # Preparing the log message
-        link_reports = []
-        for neighbor_dpid, port_no in self.adjacency.get(dpid, {}).items():
-            load = self.link_load.get((dpid, port_no), 0.0)
-            #if load > 0.1:
-            link_reports.append(f"To S{neighbor_dpid}: {load:.1f} Mbps")
+    def _print_global_link_utilization(self):
+        lines = []
         
-        if link_reports:
-            self.telemetry_log.info("[MONITOR] Switch S%d Load: %s", dpid, " | ".join(link_reports))
+        for dpid in sorted(self.adjacency.keys()):
+            is_spine = len(self.edge_ports.get(dpid, set())) == 0
+            if is_spine: continue 
+
+            link_reports = []
+            for neighbor_dpid, port_no in self.adjacency.get(dpid, {}).items():
+                load = self.link_load.get((dpid, port_no), 0.0)
+                link_reports.append(f"To S{neighbor_dpid}: {load:.1f} Mbps")
+            if link_reports:
+                lines.append(f"  Switch S{dpid} Load: " + " | ".join(link_reports))
+        
+        if lines:
+            block = "="*45 + "\n"
+            block += "              GLOBAL LINK LOAD\n"
+            block += "-"*45 + "\n"
+            block += "\n".join(lines) + "\n"
+            block += "="*45 + "\n"
+            
+            self.telemetry_log.info(block)
+            with open("/shared/telemetry.log", "w") as f:
+                f.write(block)
 
     def _handle_FlowStatsReceived(self, event):
         dpid = event.connection.dpid
@@ -147,7 +157,7 @@ class IncastController(EventMixin):
                     proc['state'] = 'BURST'
                     proc['last_round_start'] = current_time
                     proc['phi'] = current_time
-                    self.telemetry_log.info("[%s] Round 1 started (Phase phi_v: %.2f)", dst_ip, proc['phi'])
+                    self.discovery_log.info("[%s] Round 1 started (Phase phi_v: %.2f)", dst_ip, proc['phi'])
                 
                 # Transition from SILENCE to BURST state
                 elif proc['state'] == 'SILENCE':
@@ -156,7 +166,7 @@ class IncastController(EventMixin):
                     proc['Tv'] = measured_period if proc['Tv'] == 0 else (1 - self.ALPHA_EWMA) * proc['Tv'] + self.ALPHA_EWMA * measured_period
                     proc['last_round_start'] = current_time
                     proc['round_number'] += 1
-                    self.telemetry_log.info("[%s] Round %d started (Tv: %.2f)", dst_ip, proc['round_number'], proc['Tv'])
+                    self.discovery_log.info("[%s] Round %d started (Tv: %.2f)", dst_ip, proc['round_number'], proc['Tv'])
                     
                     # We need to recompute the routes
                     if proc['round_number'] >= 2:

@@ -1,6 +1,5 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-import logging
 
 log = core.getLogger()
 
@@ -26,7 +25,7 @@ class IncastOptimizer(object):
         # Computing the features of active procedures (procedures that have already reached the second round)
         active_list = []
         for ip, proc in procedures.items():
-            if proc['round_number'] < 2: continue
+            if proc['round_number'] < 2 or proc['Dv'] == 0 or proc['Tv'] == 0: continue
             active_list.append({'ip': ip, 'proc': proc, 'weight': len(proc['workers']) * proc['Dv']})
         if not active_list: return
 
@@ -42,8 +41,6 @@ class IncastOptimizer(object):
             collector_ip = entry['ip']
             proc = entry['proc']
             workers = sorted(list(proc['workers']))
-            
-            log.info("[OPTIMIZER] Procedura %s (%d worker): Distribuzione flussi...", collector_ip, len(workers))
             
             for w_ip in workers:
                 # Choosing the spine with smallest load

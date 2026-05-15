@@ -1,40 +1,43 @@
 #!/bin/bash
 
-echo "[INFO] Pulizia dell'ambiente e vecchi log..."
+echo "[INFO] Cleaning up environment and old logs..."
+cd /shared
 rm -f discovery.log telemetry.log state.log pox_main.log
 touch discovery.log telemetry.log state.log
+cd /
 
 SESSION="sdn_lab"
 
-# Chiude sessioni precedenti se il file viene lanciato due volte per sbaglio
+# Close previous sessions if the script is accidentally run twice
 tmux kill-session -t $SESSION 2>/dev/null
 
-echo "[INFO] Creazione dell'interfaccia Tmux e avvio del Controller..."
+echo "[INFO] Creating Tmux interface and starting the Controller..."
 
-# Crea la sessione in background
+# Create the session in the background
 tmux new-session -d -s $SESSION
 
-# 2. Crea i 4 riquadri senza inviare ancora comandi
-tmux split-window -h      # Divide a metà (crea Pannello 1 a destra)
-tmux split-window -v      # Divide quello di destra (crea Pannello 2 in basso a destra)
-tmux select-pane -t 0     # Torna al primo a sinistra
-tmux split-window -v      # Divide quello di sinistra (crea Pannello 3 in basso a sinistra)
+# 2. Create the 4 panes without sending commands yet
+tmux split-window -h      # Split horizontally (creates Pane 1 on the right)
+tmux split-window -v      # Split the right pane vertically (creates Pane 2 on the bottom right)
+tmux select-pane -t 0     # Return to the first pane on the left
+tmux split-window -v      # Split the left pane vertically (creates Pane 3 on the bottom left)
 
-# 3. Forza la visualizzazione a griglia perfetta
+# 3. Force a perfect grid layout
 tmux select-layout -t $SESSION:0 tiled
 
-# 4. Aspetta 1 secondo per assicurarsi che tutte le shell Bash siano pronte a leggere i tasti
+# 4. Wait 1 second to ensure all Bash shells are ready to read input
 sleep 1
 
-# 5. Inietta i comandi. Ora gli indici 0,1,2,3 sono stabili.
-# Alto Sinistra:
+# 5. Inject the commands. Now indices 0, 1, 2, and 3 are stable.
+# Top Left:
 tmux send-keys -t $SESSION:0.0 '/pox/pox.py openflow.of_01 -port=6653 openflow.discovery controller optimizer | tee pox_main.log' C-m
-# Basso Sinistra:
-tmux send-keys -t $SESSION:0.1 'tail -f discovery.log' C-m
-# Alto Destra:
-tmux send-keys -t $SESSION:0.2 'tail -f telemetry.log' C-m
-# Basso Destra:
-tmux send-keys -t $SESSION:0.3 'tail -f state.log' C-m
+# Bottom Left:
+tmux send-keys -t $SESSION:0.1 'tail -f /shared/discovery.log' C-m
+# Top Right:
+# tmux send-keys -t $SESSION:0.2 'tail -f /shared/telemetry.log' C-m
+tmux send-keys -t $SESSION:0.2 'watch -n 1 -t cat /shared/telemetry.log' C-m
+# Bottom Right:
+tmux send-keys -t $SESSION:0.3 'tail -f /shared/state.log' C-m
 
-echo "[SUCCESS] Entro nella console di comando..."
+echo "[SUCCESS] Entering the command console..."
 tmux attach-session -t $SESSION
