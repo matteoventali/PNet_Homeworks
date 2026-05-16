@@ -1,29 +1,5 @@
 ip addr add 20.0.1.4/24 dev eth8
 
-tc qdisc add dev eth0 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth0 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth1 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth1 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth2 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth2 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth3 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth3 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth4 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth4 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth5 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth5 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth6 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth6 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-tc qdisc add dev eth7 root handle 1: netem delay 0.5ms
-tc qdisc add dev eth7 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
 /usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
 ovs-vsctl add-br l4
 ovs-vsctl set Bridge l4 other-config:datapath-id=0000000000000004
@@ -54,3 +30,27 @@ ovs-vsctl set interface eth7 ingress_policing_rate=100000
 ovs-vsctl set interface eth7 ingress_policing_burst=10000
 
 ovs-vsctl set-controller l4 tcp:20.0.1.100
+
+tc qdisc add dev eth0 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth0 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth1 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth1 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth2 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth2 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth3 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth3 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth4 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth4 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth5 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth5 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth6 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth6 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
+
+tc qdisc add dev eth7 root handle 1: netem delay 0.5ms
+tc qdisc add dev eth7 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500

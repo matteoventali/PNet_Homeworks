@@ -1,5 +1,17 @@
 ip addr add 20.0.1.6/24 dev eth5
 
+/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
+ovs-vsctl add-br s1
+ovs-vsctl set Bridge s1 other-config:datapath-id=0000000000000006
+ovs-vsctl add-port s1 eth0
+ovs-vsctl add-port s1 eth1
+ovs-vsctl add-port s1 eth2
+ovs-vsctl add-port s1 eth3
+ovs-vsctl add-port s1 eth4
+
+ovs-vsctl set-controller s1 tcp:20.0.1.100
+
+
 tc qdisc add dev eth0 root handle 1: netem delay 0.5ms
 tc qdisc add dev eth0 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
 
@@ -14,25 +26,3 @@ tc qdisc add dev eth3 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 625
 
 tc qdisc add dev eth4 root handle 1: netem delay 0.5ms
 tc qdisc add dev eth4 parent 1: handle 2: tbf rate 100mbit burst 50000 limit 62500
-
-/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
-ovs-vsctl add-br s1
-ovs-vsctl set Bridge s1 other-config:datapath-id=0000000000000006
-ovs-vsctl add-port s1 eth0
-ovs-vsctl add-port s1 eth1
-ovs-vsctl add-port s1 eth2
-ovs-vsctl add-port s1 eth3
-ovs-vsctl add-port s1 eth4
-
-ovs-vsctl set interface eth0 ingress_policing_rate=100000
-ovs-vsctl set interface eth0 ingress_policing_burst=10000
-ovs-vsctl set interface eth1 ingress_policing_rate=100000
-ovs-vsctl set interface eth1 ingress_policing_burst=10000
-ovs-vsctl set interface eth2 ingress_policing_rate=100000
-ovs-vsctl set interface eth2 ingress_policing_burst=10000
-ovs-vsctl set interface eth3 ingress_policing_rate=100000
-ovs-vsctl set interface eth3 ingress_policing_burst=10000
-ovs-vsctl set interface eth4 ingress_policing_rate=100000
-ovs-vsctl set interface eth4 ingress_policing_burst=10000
-
-ovs-vsctl set-controller s1 tcp:20.0.1.100
