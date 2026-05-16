@@ -13,19 +13,13 @@ class IncastOptimizer(object):
         log.info("[OPTIMIZER] Min-Max Queue Drain Time Optimizer started.")
 
     def _handle_OptimizationRequired(self, event):
-        # ---------------------------------------------------------------------
-        # 1. STATE EXTRACTION
-        # (Currently using ctrl, but ready to be replaced by event attributes)
-        # ---------------------------------------------------------------------
-        ctrl = core.IncastController
+        # Data extraction
         procedures = event.procedures
-        
-        # Extracting topology and routing data
-        adjacency = ctrl.adjacency
-        edge_ports = ctrl.edge_ports
-        ip_to_mac = {ip: mac for mac, ip in ctrl.mac_to_ip.items()}
-        mac_to_location = ctrl.mac_to_location
-        collector_dpid_map = ctrl.collector_dpid_map
+        adjacency = event.adjacency
+        ip_to_mac = event.ip_to_mac
+        mac_to_location = event.mac_to_location
+        collector_dpid_map = event.collector_dpid_map
+        spines = event.spines
 
         # Computing the set of spine switches
         spines = sorted([d for d in adjacency.keys() if len(edge_ports.get(d, set())) == 0])

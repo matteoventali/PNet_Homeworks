@@ -21,9 +21,15 @@ def setup_file_logger(name, filename):
     return logger
 
 class OptimizationRequired(Event):
-    def __init__(self, procedures):
+    def __init__(self, procedures, adjacency, edge_ports, mac_to_ip, mac_to_location, collector_dpid_map):
         super(OptimizationRequired, self).__init__()
         self.procedures = procedures
+        self.adjacency = adjacency
+        self.edge_ports = edge_ports
+        self.mac_to_location = mac_to_location
+        self.collector_dpid_map = collector_dpid_map
+        self.ip_to_mac = {ip: mac for mac, ip in mac_to_ip.items()}
+        self.spines = sorted([d for d in adjacency.keys() if len(edge_ports.get(d, set())) == 0])
 
 class IncastController(EventMixin):
     _eventMixin_events = set([OptimizationRequired])
@@ -107,31 +113,34 @@ class IncastController(EventMixin):
         lines = []
         
         for dpid in sorted(self.adjacency.keys()):
-            # Ci posizioniamo dal punto di vista dei Leaf
+            # We evaluate the topology purely from the perspective of Leaf switches
             is_spine = len(self.edge_ports.get(dpid, set())) == 0
-            if is_spine: continue 
+            if is_spine: 
+                continue 
 
             for neighbor_dpid, port_no in self.adjacency.get(dpid, {}).items():
-                # Recuperiamo la tupla (tx_mbps, rx_mbps). Se non c'è, usiamo (0.0, 0.0)
+                # Retrieve the (tx_mbps, rx_mbps) tuple. Default to (0.0, 0.0) if the link is idle
                 load = self.link_load.get((dpid, port_no), (0.0, 0.0))
                 
-                # Prevenzione errori: se in memoria c'è rimasto un vecchio float
+                # Error prevention: Handle edge cases where legacy single float values 
+                # might still be temporarily cached in memory
                 if isinstance(load, tuple):
                     up_mbps, down_mbps = load
                 else:
                     up_mbps, down_mbps = 0.0, 0.0
                 
-                # Aggiungiamo la riga formattata
+                # Format and append the link utilization row
                 lines.append(f"  (S{dpid}, S{neighbor_dpid}) -> Upstream: {up_mbps:>5.1f} Mbps | Downstream: {down_mbps:>5.1f} Mbps")
         
         if lines:
-            # Abbiamo allargato un po' i bordi per contenere la nuova stringa più lunga
+            # Define the telemetry block layout and borders
             block = "="*72 + "\n"
             block += "                           GLOBAL LINK LOAD\n"
             block += "-"*72 + "\n"
             block += "\n".join(lines) + "\n"
             block += "="*72 + "\n"
             
+            # Output to the main POX log and overwrite the shared file for real-time visualization
             self.telemetry_log.info(block)
             with open("/shared/telemetry.log", "w") as f:
                 f.write(block)
@@ -188,7 +197,13 @@ class IncastController(EventMixin):
                     
                     # We need to recompute the routes
                     if proc['round_number'] >= 2:
-                        self.raiseEvent(OptimizationRequired(self.procedures))
+                        self.raiseEventNoErrors(OptimizationRequired, 
+                                                    self.procedures, 
+                                                    self.adjacency, 
+                                                    self.edge_ports, 
+                                                    self.mac_to_ip, 
+                                                    self.mac_to_location, 
+                                                    self.collector_dpid_map)
             else:
                 # Transition from BURST to SILENCE
                 if proc['state'] == 'BURST' and (current_time - proc['last_traffic_time']) > self.SILENCE_THRESHOLD:
@@ -207,7 +222,13 @@ class IncastController(EventMixin):
                         del self.procedures[dst_ip]
 
                         # We need to recompute the routes
-                        self.raiseEvent(OptimizationRequired(self.procedures))
+                        self.raiseEventNoErrors(OptimizationRequired, 
+                                                    self.procedures, 
+                                                    self.adjacency, 
+                                                    self.edge_ports, 
+                                                    self.mac_to_ip, 
+                                                    self.mac_to_location, 
+                                                    self.collector_dpid_map)
 
     def _handle_TopologyStable(self, event):
         for s in event.switches:
