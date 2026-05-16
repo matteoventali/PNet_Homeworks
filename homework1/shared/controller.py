@@ -212,6 +212,7 @@ class IncastController(EventMixin):
                     m_dv = (proc['accumulated_bytes'] * 8 / 1e6) / active_workers if active_workers else 0
                     proc['Dv'] = m_dv if proc['Dv'] == 0 else (1 - self.ALPHA_EWMA) * proc['Dv'] + self.ALPHA_EWMA * m_dv
                     proc['accumulated_bytes'] = 0 
+                    proc['last_duration_round'] = current_time - proc['last_round_start'] - self.SILENCE_THRESHOLD
                     self._print_procedures_state()
                 
                 # Transition from SILENCE to DEAD (removed from procedures)
@@ -321,7 +322,8 @@ class IncastController(EventMixin):
                                       'phi': cur, 
                                       'last_round_start': 0, 
                                       'Tv': 0.0, 'Dv': 0.0, 
-                                      'round_number': 1, 
+                                      'round_number': 1,
+                                      'last_duration_round': 0.0, 
                                       'state': 'INIT', 
                                       'last_traffic_time': cur, 
                                       'accumulated_bytes': 0, 
@@ -399,7 +401,7 @@ class IncastController(EventMixin):
         self.state_log.info("--- PROCEDURES STATE ---")
         for c in sorted(self.procedures.keys()):
             p = self.procedures[c]
-            self.state_log.info("%s | R:%d | K:%d | Dv:%.1f | Tv:%.1f | phi:%.1f", c, p['round_number'], len(p['workers']), p['Dv'], p['Tv'], p['phi'])
+            self.state_log.info("%s | R:%d | K:%d | Dv:%.1f | Tv:%.1f | phi:%.1f | last round:%.1f", c, p['round_number'], len(p['workers']), p['Dv'], p['Tv'], p['phi'], p['last_duration_round'])
 
 # Entry point
 def launch(polling_interval=1.0, silence_threshold=8.0, inactivity_coefficient=2, alpha_ewma=1):
