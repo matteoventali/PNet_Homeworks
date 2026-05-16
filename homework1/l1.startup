@@ -52,4 +52,29 @@ ovs-vsctl add-port l1 eth9
 ovs-vsctl add-port l1 eth10
 ovs-vsctl add-port l1 eth11
 
+ovs-vsctl set interface eth0 ingress_policing_rate=100000
+ovs-vsctl set interface eth0 ingress_policing_burst=10000
+ovs-vsctl set interface eth1 ingress_policing_rate=100000
+ovs-vsctl set interface eth1 ingress_policing_burst=10000
+ovs-vsctl set interface eth2 ingress_policing_rate=100000
+ovs-vsctl set interface eth2 ingress_policing_burst=10000
+ovs-vsctl set interface eth3 ingress_policing_rate=100000
+ovs-vsctl set interface eth3 ingress_policing_burst=10000
+ovs-vsctl set interface eth4 ingress_policing_rate=100000
+ovs-vsctl set interface eth4 ingress_policing_burst=10000
+ovs-vsctl set interface eth5 ingress_policing_rate=100000
+ovs-vsctl set interface eth5 ingress_policing_burst=10000
+ovs-vsctl set interface eth6 ingress_policing_rate=100000
+ovs-vsctl set interface eth6 ingress_policing_burst=10000
+ovs-vsctl set interface eth7 ingress_policing_rate=100000
+ovs-vsctl set interface eth7 ingress_policing_burst=10000
+ovs-vsctl set interface eth8 ingress_policing_rate=100000
+ovs-vsctl set interface eth8 ingress_policing_burst=10000
+ovs-vsctl set interface eth9 ingress_policing_rate=100000
+ovs-vsctl set interface eth9 ingress_policing_burst=10000
+ovs-vsctl set interface eth10 ingress_policing_rate=100000
+ovs-vsctl set interface eth10 ingress_policing_burst=10000
+ovs-vsctl set interface eth11 ingress_policing_rate=100000
+ovs-vsctl set interface eth11 ingress_policing_burst=10000
+
 ovs-vsctl set-controller l1 tcp:20.0.1.100

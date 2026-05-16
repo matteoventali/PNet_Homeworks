@@ -24,4 +24,15 @@ ovs-vsctl add-port s2 eth2
 ovs-vsctl add-port s2 eth3
 ovs-vsctl add-port s2 eth4
 
+ovs-vsctl set interface eth0 ingress_policing_rate=100000
+ovs-vsctl set interface eth0 ingress_policing_burst=10000
+ovs-vsctl set interface eth1 ingress_policing_rate=100000
+ovs-vsctl set interface eth1 ingress_policing_burst=10000
+ovs-vsctl set interface eth2 ingress_policing_rate=100000
+ovs-vsctl set interface eth2 ingress_policing_burst=10000
+ovs-vsctl set interface eth3 ingress_policing_rate=100000
+ovs-vsctl set interface eth3 ingress_policing_burst=10000
+ovs-vsctl set interface eth4 ingress_policing_rate=100000
+ovs-vsctl set interface eth4 ingress_policing_burst=10000
+
 ovs-vsctl set-controller s2 tcp:20.0.1.100

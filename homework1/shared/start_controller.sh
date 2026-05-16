@@ -1,5 +1,20 @@
 #!/bin/bash
 
+# Handling optimizer
+OPT_MODULE="optimizer"
+
+if [ "$1" == "advanced" ]; then
+    OPT_MODULE="advanced_optimizer"
+    echo "[INFO] Modality: ADVANCED OPTIMIZER"
+elif [ "$1" == "standard" ] || [ -z "$1" ]; then
+    OPT_MODULE="optimizer"
+    echo "[INFO] Modality: STANDARD OPTIMIZER (Default)"
+else
+    echo "[ERRORE] Parameter '$1' unknown."
+    echo "Correctly use: $0 [standard | advanced]"
+    exit 1
+fi
+
 echo "[INFO] Cleaning up environment and old logs..."
 cd /shared
 rm -f discovery.log telemetry.log state.log pox_main.log
@@ -30,7 +45,7 @@ sleep 1
 
 # 5. Inject the commands. Now indices 0, 1, 2, and 3 are stable.
 # Top Left:
-tmux send-keys -t $SESSION:0.0 '/pox/pox.py openflow.of_01 -port=6653 openflow.discovery controller optimizer | tee pox_main.log' C-m
+tmux send-keys -t $SESSION:0.0 '/pox/pox.py openflow.of_01 -port=6653 openflow.discovery controller $OPT_MODULE | tee pox_main.log' C-m
 # Bottom Left:
 tmux send-keys -t $SESSION:0.1 'tail -f /shared/discovery.log' C-m
 # Top Right:
