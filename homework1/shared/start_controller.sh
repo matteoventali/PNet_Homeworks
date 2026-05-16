@@ -1,17 +1,20 @@
 #!/bin/bash
 
 # Handling optimizer
-OPT_MODULE="optimizer"
+OPT_MODULE=""
 
 if [ "$1" == "advanced" ]; then
     OPT_MODULE="advanced_optimizer"
     echo "[INFO] Modality: ADVANCED OPTIMIZER"
-elif [ "$1" == "standard" ] || [ -z "$1" ]; then
+elif [ "$1" == "normal" ]; then
     OPT_MODULE="optimizer"
-    echo "[INFO] Modality: STANDARD OPTIMIZER (Default)"
+    echo "[INFO] Modality: NORMAL OPTIMIZER"
+elif [ -z "$1" ]; then
+    OPT_MODULE=""
+    echo "[INFO] Modality: NO OPTIMIZER"
 else
     echo "[ERROR] Parameter '$1' unknown."
-    echo "Correctly use: $0 [standard | advanced]"
+    echo "Correctly use: $0 [normal | advanced]"
     exit 1
 fi
 
