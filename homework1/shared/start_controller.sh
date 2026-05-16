@@ -10,7 +10,7 @@ elif [ "$1" == "standard" ] || [ -z "$1" ]; then
     OPT_MODULE="optimizer"
     echo "[INFO] Modality: STANDARD OPTIMIZER (Default)"
 else
-    echo "[ERRORE] Parameter '$1' unknown."
+    echo "[ERROR] Parameter '$1' unknown."
     echo "Correctly use: $0 [standard | advanced]"
     exit 1
 fi

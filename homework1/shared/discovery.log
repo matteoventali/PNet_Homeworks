@@ -1,24 +1,24 @@
-2026-05-16 08:52:01,380 - [DISCOVERY] 10.0.1.1: New procedure.
-2026-05-16 08:52:01,977 - [10.0.1.1] Round 1 started (Phase phi_v: 55.03)
-2026-05-16 08:52:02,928 - [DISCOVERY] 10.0.1.2: New procedure.
-2026-05-16 08:52:03,986 - [10.0.1.2] Round 1 started (Phase phi_v: 57.04)
-2026-05-16 08:52:04,313 - [DISCOVERY] 10.0.1.3: New procedure.
-2026-05-16 08:52:04,984 - [10.0.1.3] Round 1 started (Phase phi_v: 58.03)
-2026-05-16 08:52:05,367 - [DISCOVERY] 10.0.1.4: New procedure.
-2026-05-16 08:52:05,988 - [10.0.1.4] Round 1 started (Phase phi_v: 59.04)
-2026-05-16 08:52:31,998 - [10.0.1.1] Round 2 started (Tv: 30.02)
-2026-05-16 08:52:34,997 - [10.0.1.3] Round 2 started (Tv: 30.01)
-2026-05-16 08:52:44,003 - [10.0.1.2] Round 2 started (Tv: 40.02)
-2026-05-16 08:52:46,003 - [10.0.1.4] Round 2 started (Tv: 40.01)
-2026-05-16 08:53:02,008 - [10.0.1.1] Round 3 started (Tv: 30.01)
-2026-05-16 08:53:05,009 - [10.0.1.3] Round 3 started (Tv: 30.01)
-2026-05-16 08:53:24,013 - [10.0.1.2] Round 3 started (Tv: 40.01)
-2026-05-16 08:53:26,013 - [10.0.1.4] Round 3 started (Tv: 40.01)
-2026-05-16 08:53:32,015 - [10.0.1.1] Round 4 started (Tv: 30.01)
-2026-05-16 08:53:35,015 - [10.0.1.3] Round 4 started (Tv: 30.01)
-2026-05-16 08:54:04,026 - [10.0.1.2] Round 4 started (Tv: 40.01)
-2026-05-16 08:54:06,025 - [10.0.1.4] Round 4 started (Tv: 40.01)
-2026-05-16 08:54:35,041 - [LIFECYCLE] Dead procedure 10.0.1.1
-2026-05-16 08:54:38,043 - [LIFECYCLE] Dead procedure 10.0.1.3
-2026-05-16 08:55:26,058 - [LIFECYCLE] Dead procedure 10.0.1.2
-2026-05-16 08:55:29,060 - [LIFECYCLE] Dead procedure 10.0.1.4
+2026-05-16 09:41:58,596 - [DISCOVERY] 10.0.1.1: New procedure.
+2026-05-16 09:41:59,100 - [10.0.1.1] Round 1 started (Phase phi_v: 76.06)
+2026-05-16 09:42:00,131 - [DISCOVERY] 10.0.1.2: New procedure.
+2026-05-16 09:42:01,103 - [10.0.1.2] Round 1 started (Phase phi_v: 78.07)
+2026-05-16 09:42:01,444 - [DISCOVERY] 10.0.1.3: New procedure.
+2026-05-16 09:42:02,100 - [10.0.1.3] Round 1 started (Phase phi_v: 79.06)
+2026-05-16 09:42:02,465 - [DISCOVERY] 10.0.1.4: New procedure.
+2026-05-16 09:42:03,100 - [10.0.1.4] Round 1 started (Phase phi_v: 80.06)
+2026-05-16 09:42:29,109 - [10.0.1.1] Round 2 started (Tv: 30.01)
+2026-05-16 09:42:32,109 - [10.0.1.3] Round 2 started (Tv: 30.01)
+2026-05-16 09:42:40,113 - [10.0.1.2] Round 2 started (Tv: 39.01)
+2026-05-16 09:42:43,115 - [10.0.1.4] Round 2 started (Tv: 40.01)
+2026-05-16 09:42:59,119 - [10.0.1.1] Round 3 started (Tv: 30.01)
+2026-05-16 09:43:02,121 - [10.0.1.3] Round 3 started (Tv: 30.01)
+2026-05-16 09:43:21,128 - [10.0.1.2] Round 3 started (Tv: 41.02)
+2026-05-16 09:43:23,131 - [10.0.1.4] Round 3 started (Tv: 40.02)
+2026-05-16 09:43:29,136 - [10.0.1.1] Round 4 started (Tv: 30.02)
+2026-05-16 09:43:32,134 - [10.0.1.3] Round 4 started (Tv: 30.01)
+2026-05-16 09:44:01,153 - [10.0.1.2] Round 4 started (Tv: 40.02)
+2026-05-16 09:44:03,145 - [10.0.1.4] Round 4 started (Tv: 40.01)
+2026-05-16 09:44:33,157 - [LIFECYCLE] Dead procedure 10.0.1.1
+2026-05-16 09:44:37,156 - [LIFECYCLE] Dead procedure 10.0.1.3
+2026-05-16 09:45:25,172 - [LIFECYCLE] Dead procedure 10.0.1.2
+2026-05-16 09:45:26,174 - [LIFECYCLE] Dead procedure 10.0.1.4
