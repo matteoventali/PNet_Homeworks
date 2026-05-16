@@ -1,0 +1,40 @@
+{
+  "scenarios": {
+    "scenario_1_full_collision": {
+      "description": "Worst-case scenario for Incast traffic. All 4 procedures start exactly at the same time (phi=0) with identical cycle periods, forcing massive concurrent flows on the core fabric switches.",
+      "trainings": [
+        {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
+        {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
+        {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
+        {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4}
+      ]
+    },
+    "scenario_2_asymmetric_load": {
+      "description": "Simulates a production cluster where a massive background job (e.g., LLM training with 16 workers) runs alongside small, frequent, and short-burst jobs. Tests max-min fairness to prevent light jobs from starvation.",
+      "trainings": [
+        {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7","w8","w9","w10","w11","w12","w13","w14","w15","w16"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 150.0, "T": 60, "phi": 1.0, "cycles": 2},
+        {"name": "green",  "senders": ["w17","w18","w19","w20"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 30.0, "T": 20, "phi": 5.0, "cycles": 5},
+        {"name": "red",    "senders": ["w21","w22","w23","w24"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 30.0, "T": 20, "phi": 10.0, "cycles": 5},
+        {"name": "yellow", "senders": ["w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 30.0, "T": 20, "phi": 15.0, "cycles": 5}
+      ]
+    },
+    "scenario_3_stochastic_cascade": {
+      "description": "Creates a continuous, staggered flow of distributed training cycles. Phase offsets (phi) are carefully shifted so that network buffers are constantly utilized, evaluating the controller's dynamic path re-allocation stability over time.",
+      "trainings": [
+        {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 70.0, "T": 25, "phi": 0.0, "cycles": 5},
+        {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 70.0, "T": 25, "phi": 6.0, "cycles": 5},
+        {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 70.0, "T": 25, "phi": 12.0, "cycles": 5},
+        {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 70.0, "T": 25, "phi": 18.0, "cycles": 5}
+      ]
+    },
+    "scenario_4_zero_overlap_baseline": {
+      "description": "A baseline control scenario where bursts are strictly isolated. Each training round begins only when the previous one has completely finished, meaning the core network never experiences cross-traffic congestion.",
+      "trainings": [
+        {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 80.0, "T": 40, "phi": 0.0, "cycles": 2},
+        {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 80.0, "T": 40, "phi": 10.0, "cycles": 2},
+        {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 80.0, "T": 40, "phi": 20.0, "cycles": 2},
+        {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 80.0, "T": 40, "phi": 30.0, "cycles": 2}
+      ]
+    }
+  }
+}
