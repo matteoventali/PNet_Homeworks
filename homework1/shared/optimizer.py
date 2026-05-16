@@ -23,9 +23,7 @@ class IncastOptimizer(object):
             log.warning("[OPTIMIZER] Invalid topology. Missing spines.")
             return
 
-        # ---------------------------------------------------------------------
-        # 2. FILTERING AND SORTING PROCEDURES
-        # ---------------------------------------------------------------------
+        # Filtering procedures that are active
         active_list = []
         for ip, proc in procedures.items():
             # Skip procedures that haven't completed round 1 or have missing data
@@ -41,10 +39,6 @@ class IncastOptimizer(object):
 
         # Sorting procedures by weight (Longest Processing Time first)
         active_list.sort(key=lambda x: x['weight'], reverse=True)
-
-        # ---------------------------------------------------------------------
-        # 3. STANDARD LOAD BALANCING ALGORITHM (Global Spine Volume)
-        # ---------------------------------------------------------------------
         flow_mapping = {} # Mapping: (worker_ip, collector_ip) -> spine_dpid
         spine_loads = {s: 0.0 for s in spines}
 
@@ -66,9 +60,7 @@ class IncastOptimizer(object):
         log.info("[OPTIMIZER] Estimated global spine loading: %s", 
                  {f"S{k}": f"{v:.1f}Mb" for k, v in spine_loads.items()})
 
-        # ---------------------------------------------------------------------
-        # 4. RULE DEPLOYMENT
-        # ---------------------------------------------------------------------
+        # Rule deployment
         self._deploy_flow_rules(flow_mapping, adjacency, ip_to_mac, mac_to_location, collector_dpid_map)
 
     def _deploy_flow_rules(self, flow_mapping, adjacency, ip_to_mac, mac_to_location, collector_dpid_map):

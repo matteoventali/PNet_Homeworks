@@ -28,9 +28,7 @@ class IncastOptimizer(object):
             log.warning("[OPTIMIZER] Invalid topology. Missing spines")
             return
 
-        # ---------------------------------------------------------------------
-        # 2. FILTERING AND SORTING PROCEDURES
-        # ---------------------------------------------------------------------
+        # Filtering procedures that are active
         active_list = []
         for ip, proc in procedures.items():
             # Skip procedures that haven't completed round 1 or have missing data
@@ -47,9 +45,7 @@ class IncastOptimizer(object):
         # Sorting: Longest Processing Time first (Largest procedures are routed first)
         active_list.sort(key=lambda x: x['weight'], reverse=True)
 
-        # ---------------------------------------------------------------------
-        # 3. MIN-MAX BOTTLENECK ROUTING ALGORITHM
-        # ---------------------------------------------------------------------
+        # MIN-MAX BOTTLENECK ROUTING ALGORITHM
         flow_mapping = {} # Mapping: (worker_ip, collector_ip) -> chosen_spine_dpid
         
         # Virtual State Matrix tracking the accumulated Volume (Mb) on each unidirectional link.
@@ -112,9 +108,7 @@ class IncastOptimizer(object):
                     virtual_link_loads[(w_leaf_dpid, best_spine)] = virtual_link_loads.get((w_leaf_dpid, best_spine), 0.0) + worker_dv
                     virtual_link_loads[(best_spine, c_leaf_dpid)] = virtual_link_loads.get((best_spine, c_leaf_dpid), 0.0) + worker_dv
 
-        # ---------------------------------------------------------------------
-        # 4. RULE DEPLOYMENT
-        # ---------------------------------------------------------------------
+        # Rule deployment
         self._deploy_flow_rules(flow_mapping, adjacency, ip_to_mac, mac_to_location, collector_dpid_map)
         
         log.info("[OPTIMIZER] Routing completed. Processed %d procedures.", len(active_list))
