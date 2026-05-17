@@ -16,9 +16,9 @@ BASE_PORT = 5000
 # =========================
 TRAININGS = [
     {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-        {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-        {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-        {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4}
+    {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
+    {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
+    {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4}
 ]
 
 # =========================
@@ -101,22 +101,49 @@ def get_rx(node, cmap):
     return int(r.stdout.strip() or 0)
 
 
+#def monitor_rx(node, cmap, logfile, stop_event):
+#    print(f"[MONITOR RX] {node}")
+#    prev = get_rx(node, cmap)
+#    t = 0
+#
+#    with open(logfile, "w") as f:
+#        f.write("time throughput_mbps\n")
+#
+#        while not stop_event.is_set():
+#            time.sleep(1)
+#            curr = get_rx(node, cmap)
+#            thr = (curr - prev) * 8 / 1e6
+#            f.write(f"{t} {thr}\n")
+#            f.flush()
+#            prev = curr
+#            t += 1
+
 def monitor_rx(node, cmap, logfile, stop_event):
     print(f"[MONITOR RX] {node}")
-    prev = get_rx(node, cmap)
-    t = 0
+    prev_bytes = get_rx(node, cmap)
+    prev_time = time.time()
+    t_start = prev_time
 
     with open(logfile, "w") as f:
         f.write("time throughput_mbps\n")
 
         while not stop_event.is_set():
             time.sleep(1)
-            curr = get_rx(node, cmap)
-            thr = (curr - prev) * 8 / 1e6
-            f.write(f"{t} {thr}\n")
-            f.flush()
-            prev = curr
-            t += 1
+            curr_time = time.time()
+            curr_bytes = get_rx(node, cmap)
+            
+            # Calcolo esatto: Delta Byte / Delta Tempo Reale
+            delta_t = curr_time - prev_time
+            if delta_t > 0:
+                thr = (curr_bytes - prev_bytes) * 8 / (1e6 * delta_t)
+                
+                # Arrotondiamo il tempo per il grafico
+                t_plot = curr_time - t_start
+                f.write(f"{t_plot:.1f} {thr:.2f}\n")
+                f.flush()
+                
+            prev_bytes = curr_bytes
+            prev_time = curr_time
 
 
 # =========================

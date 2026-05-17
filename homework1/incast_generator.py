@@ -137,23 +137,48 @@ def get_rx(node, cmap):
     return int(r.stdout.strip() or 0)
 
 
+#def monitor_rx(node, cmap, logfile, stop_event):
+#    print(f"[MONITOR RX] {node}")
+#    prev = get_rx(node, cmap)
+#    t = 0
+#
+#    with open(logfile, "w") as f:
+#        f.write("time throughput_mbps\n")
+#
+#        while not stop_event.is_set():
+#            time.sleep(1)
+#            curr = get_rx(node, cmap)
+#            thr = (curr - prev) * 8 / 1e6
+#            f.write(f"{t} {thr}\n")
+#            f.flush()
+#            prev = curr
+#            t += 1
 def monitor_rx(node, cmap, logfile, stop_event):
     print(f"[MONITOR RX] {node}")
-    prev = get_rx(node, cmap)
-    t = 0
+    prev_bytes = get_rx(node, cmap)
+    prev_time = time.time()
+    t_start = prev_time
 
     with open(logfile, "w") as f:
         f.write("time throughput_mbps\n")
 
         while not stop_event.is_set():
             time.sleep(1)
-            curr = get_rx(node, cmap)
-            thr = (curr - prev) * 8 / 1e6
-            f.write(f"{t} {thr}\n")
-            f.flush()
-            prev = curr
-            t += 1
-
+            curr_time = time.time()
+            curr_bytes = get_rx(node, cmap)
+            
+            # Calcolo esatto: Delta Byte / Delta Tempo Reale
+            delta_t = curr_time - prev_time
+            if delta_t > 0:
+                thr = (curr_bytes - prev_bytes) * 8 / (1e6 * delta_t)
+                
+                # Arrotondiamo il tempo per il grafico
+                t_plot = curr_time - t_start
+                f.write(f"{t_plot:.1f} {thr:.2f}\n")
+                f.flush()
+                
+            prev_bytes = curr_bytes
+            prev_time = curr_time
 
 # =========================
 # MONITOR TX
