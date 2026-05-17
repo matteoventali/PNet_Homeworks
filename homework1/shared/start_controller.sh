@@ -9,6 +9,9 @@ if [ "$1" == "advanced" ]; then
 elif [ "$1" == "normal" ]; then
     OPT_MODULE="optimizer"
     echo "[INFO] Modality: NORMAL OPTIMIZER"
+elif [ "$1" == "temporal" ]; then
+    OPT_MODULE="predictive_optimizer"
+    echo "[INFO] Modality: TEMPORAL OPTIMIZER"
 elif [ -z "$1" ]; then
     OPT_MODULE=""
     echo "[INFO] Modality: NO OPTIMIZER"
