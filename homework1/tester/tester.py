@@ -7,7 +7,7 @@ import os
 import sys
 
 # =========================
-# PARAMETRI GLOBALI
+# GLOBAL PARAMETERS
 # =========================
 C_LINK = 100.0   # Mbps
 RTT = 0.005      # s
@@ -15,7 +15,8 @@ ALPHA = 1.5
 BASE_PORT = 5000
 
 # =========================
-# CONFIG DEFAULT SCENARIO
+# DEFAULT SCENARIO CONFIG
+# (From incast_generator.py)
 # =========================
 DEFAULT_TRAININGS = [
     {
@@ -61,7 +62,7 @@ DEFAULT_TRAININGS = [
 ]
 
 # =========================
-# HANDLING SCENARIOS
+# SCENARIO MANAGEMENT
 # =========================
 def load_scenarios(filename="scenarios.json"):
     scenarios = {
@@ -282,9 +283,9 @@ def run_training(cfg, cmap):
 # PLOT
 # =========================
 def plot_collectors(files, trainings):
-    plt.figure(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(10, 5))
     
-    # Mappa per colorare le linee del collector in base al nome della procedura
+    # Map to color collector lines based on procedure name
     color_map = {cfg["collector"]: cfg["name"] for cfg in trainings}
     
     for label, fname in files.items():
@@ -297,40 +298,45 @@ def plot_collectors(files, trainings):
                 y.append(float(b))
                 
         c_name = color_map.get(label, 'tab:blue')
-        # Sostituiamo il giallo con l'arancione per renderlo visibile su sfondo bianco
+        # Map yellow to orange for visibility on white background
         plot_color = 'orange' if c_name == 'yellow' else c_name
         
-        plt.plot(t, y, label=f"Collector {label} ({c_name})", color=plot_color, linewidth=2)
+        ax.plot(t, y, label=f"Collector {label} ({c_name})", color=plot_color, linewidth=2)
 
-    plt.title("Collector RX - Throughput per Procedura", fontsize=14, fontweight='bold')
-    plt.xlabel("Time (s)")
-    plt.ylabel("Mbps")
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
-    # plt.show() è stato rimosso da qui e spostato in fondo al main
+    # Pad the title so it doesn't touch the graph
+    ax.set_title("Collector RX - Throughput per Procedure", fontsize=14, fontweight='bold', pad=20)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Mbps")
+    
+    # Add vertical margins so data doesn't hit the ceiling
+    ax.margins(y=0.15)
+    
+    # Place legend completely outside the plot to the right
+    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Adjust layout to make room for the external legend
+    plt.tight_layout()
 
 
 def plot_workers_by_procedure(tx_files, trainings):
-    # Genera una finestra (figure) separata per ogni procedura
     for cfg in trainings:
         proc_name = cfg["name"]
         workers = cfg["senders"]
         
-        # Filtra solo i file TX appartenenti ai worker di questa procedura
         proc_files = {w: tx_files[w] for w in workers if w in tx_files}
         
         if not proc_files:
             continue
             
         n = len(proc_files)
-        # Altezza dinamica in base al numero di worker
+        # Dynamic height based on number of workers
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), sharex=True)
         
         if n == 1:
             axes = [axes]
 
         plot_color = 'orange' if proc_name == 'yellow' else proc_name
-        # Sicurezza: se il nome procedura non è un colore standard, usa default
         if plot_color not in ['blue', 'green', 'red', 'orange', 'cyan', 'magenta', 'black', 'purple']:
             plot_color = 'tab:blue'
 
@@ -344,13 +350,21 @@ def plot_workers_by_procedure(tx_files, trainings):
                     y.append(float(b))
 
             ax.plot(t, y, color=plot_color, linewidth=1.5)
-            ax.set_title(f"Worker: {label}", fontsize=10)
+            # Add vertical margins to prevent line from hitting the top
+            ax.margins(y=0.15)
+            
+            # Place subplot title cleanly
+            ax.set_title(f"Worker: {label}", fontsize=10, loc='left', pad=5)
             ax.grid(True, linestyle='--', alpha=0.7)
             ax.set_ylabel("Mbps")
 
         axes[-1].set_xlabel("Time (s)")
-        fig.suptitle(f"Worker TX - Procedura: {proc_name.upper()}", fontsize=14, fontweight='bold')
-        plt.tight_layout()
+        
+        # Main figure title
+        fig.suptitle(f"Worker TX - Procedure: {proc_name.upper()}", fontsize=14, fontweight='bold')
+        
+        # Use rect to ensure suptitle doesn't overlap with the top subplot
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
 
 
 # =========================
@@ -429,11 +443,10 @@ def main():
 
     print("\nPlotting...")
     
-    # Passiamo 'trainings' per raggruppare ed estrarre i colori
     plot_collectors(rx_files, trainings)
     plot_workers_by_procedure(tx_files, trainings)
     
-    # Mostra tutte le finestre generate contemporaneamente
+    # Show all generated windows simultaneously
     plt.show()
 
     print("\n=== DONE ===\n")
