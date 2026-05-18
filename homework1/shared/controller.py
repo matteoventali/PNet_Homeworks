@@ -145,6 +145,14 @@ class IncastController(EventMixin):
             with open("/shared/telemetry.log", "w") as f:
                 f.write(block)
 
+    def _handle_ErrorIn(self, event):
+        error_type = event.type
+        error_code = event.code
+        dpid = event.dpid
+        
+        log.error("[OPENFLOW ERROR] Switch S%s rejected this command! Type: %s, Code: %s", 
+                  dpid, error_type, error_code)
+
     def _handle_FlowStatsReceived(self, event):
         dpid = event.connection.dpid
         current_time = time.time() - self.start_time
@@ -377,7 +385,7 @@ class IncastController(EventMixin):
             self._smart_flood(packet, event)
 
     def _install_flow(self, packet, connection, port):
-        msg = of.ofp_flow_mod(priority=10, idle_timeout=60)
+        msg = of.ofp_flow_mod(priority=10, idle_timeout=120)
         msg.match.dl_src, msg.match.dl_dst = packet.src, packet.dst
         msg.actions.append(of.ofp_action_output(port=port))
         connection.send(msg)

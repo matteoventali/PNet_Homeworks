@@ -51,7 +51,7 @@ sleep 1
 
 # 5. Inject the commands. Now indices 0, 1, 2, and 3 are stable.
 # Top Left:
-tmux send-keys -t $SESSION:0.0 '/pox/pox.py openflow.of_01 -port=6653 openflow.discovery controller $OPT_MODULE | tee pox_main.log' C-m
+tmux send-keys -t $SESSION:0.0 "/pox/pox.py openflow.of_01 -port=6653 openflow.discovery controller $OPT_MODULE | tee pox_main.log" C-m
 # Bottom Left:
 tmux send-keys -t $SESSION:0.1 'tail -f /shared/discovery.log' C-m
 # Top Right:

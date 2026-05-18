@@ -106,11 +106,12 @@ class PredictiveIncastOptimizer(object):
         ip_to_mac = event.ip_to_mac
         mac_to_location = event.mac_to_location
         collector_dpid_map = event.collector_dpid_map
+        spines = event.spines
         
         t_now = time.time()
-        spines = sorted([d for d in adjacency.keys() if len(adjacency.get(d, {})) > 0])
-        
-        if not spines or len(spines) < 2: return
+        if not spines or len(spines) < 2:
+            log.warning("[OPTIMIZER] Invalid topology. Missing spines")
+            return
 
         # 1. SELECTION OF PREDICTABLE PROCEDURES
         predictable_procs = {}
@@ -221,30 +222,50 @@ class PredictiveIncastOptimizer(object):
     def _deploy_flow_rules(self, flow_mapping, adjacency, ip_to_mac, mac_to_location, collector_dpid_map):
         for (w_ip, c_ip), spine_dpid in flow_mapping.items():
             w_mac = ip_to_mac.get(w_ip)
+            c_mac = ip_to_mac.get(c_ip) # Recuperiamo anche il MAC del collector
+            if not w_mac or not c_mac: continue
+            
+            # Identifying the location of worker and collector (Leaf DPIDs)
             leaf_dpid, _ = mac_to_location.get(w_mac, (None, None))
             collector_dpid = collector_dpid_map.get(c_ip)
+            _, collector_port = mac_to_location.get(c_mac, (None, None))
             
-            if not leaf_dpid or not collector_dpid or leaf_dpid == collector_dpid: continue
+            if not leaf_dpid or not collector_dpid: continue
 
+            # If the traffic is local (same leaf switch), no spine routing is needed
+            if leaf_dpid == collector_dpid:
+                continue
+
+            path_selected = [leaf_dpid, spine_dpid, collector_dpid]
+            
+            # PASSIAMO I MAC ADDRESS, NON GLI IP
+            # Route from ingress leaf switch to the chosen spine switch
             out_port_leaf = adjacency.get(leaf_dpid, {}).get(spine_dpid)
             if out_port_leaf:
-                self._install_high_priority_rule(leaf_dpid, w_ip, c_ip, out_port_leaf)
+                self._install_rule(leaf_dpid, w_mac, c_mac, out_port_leaf)
                 
+            # Route from the chosen spine switch to the egress leaf switch
             out_port_spine = adjacency.get(spine_dpid, {}).get(collector_dpid)
             if out_port_spine:
-                self._install_high_priority_rule(spine_dpid, w_ip, c_ip, out_port_spine)
+                self._install_rule(spine_dpid, w_mac, c_mac, out_port_spine)
 
-    def _install_high_priority_rule(self, dpid, src, dst, port):
+            # Final hop
+            if collector_port:
+                self._install_rule(collector_dpid, w_mac, c_mac, collector_port)
+                
+            log.info("[OPTIMIZER] Installed L2 path for (%s, %s): %s", w_ip, c_ip, path_selected)
+
+    def _install_rule(self, dpid, src_mac, dst_mac, port):
         msg = of.ofp_flow_mod()
-        msg.priority = 100 
-        msg.match.dl_type = 0x0800
-        msg.match.nw_src = src
-        msg.match.nw_dst = dst
+        msg.command = of.OFPFC_MODIFY
+        msg.priority = 10
+        msg.idle_timeout = 120
+        msg.match.dl_src = src_mac
+        msg.match.dl_dst = dst_mac
         msg.actions.append(of.ofp_action_output(port=port))
         
         conn = core.openflow.getConnection(dpid)
         if conn: conn.send(msg)
-
 
 def launch():
     core.registerNew(PredictiveIncastOptimizer)
