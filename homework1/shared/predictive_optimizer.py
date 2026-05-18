@@ -17,9 +17,6 @@ class PredictiveIncastOptimizer(object):
         log.info("[PREDICTIVE OPTIMIZER] Graph-Clustering Time-Aware Optimizer started.")
 
     def _is_predictable(self, proc):
-        """
-        Guard Clause: Verifies if the procedure has completed the learning phase (Round 2+).
-        """
         if proc.get('Dv') is None or proc.get('Dv') <= 0: return False
         if proc.get('Tv') is None or proc.get('Tv') <= 0: return False
         if proc.get('phi') is None: return False
@@ -29,30 +26,24 @@ class PredictiveIncastOptimizer(object):
     def _calculate_burst_window(self, t_now, proc):
         """
         Calculates the time interval [start, end] of the next (or current) burst.
-        Uses the REAL measurement of the previous round for maximum safety,
-        with a fallback to the ideal theoretical calculation.
         """
         phi = proc['phi']
         T = proc['Tv']
         worker_dv = proc['Dv']
         
-        # 1. BURST DURATION CALCULATION (DELTA)
         # Retrieve the real duration of the last burst measured by the controller
         measured_delta = proc.get('last_duration_round', 0)
+        last_start = proc.get('last_round_start', 0)
         
         if measured_delta > 0:
-            # Option A: Use real data. 
             # Add a tiny 5% margin to absorb TCP jitter
             delta = measured_delta * 1.05 
         else:
-            # Option B: Theoretical fallback if we don't have complete historical data yet
+            # Theoretical fallback if we don't have complete historical data yet
             num_workers = len(proc['workers'])
             fair_share = self.C_LINK / num_workers
             delta = worker_dv / fair_share
 
-        # 2. WINDOW CALCULATION
-        last_start = proc.get('last_round_start', 0)
-        
         # CASE A: Procedure currently active
         if t_now >= last_start and t_now <= (last_start + delta):
             return last_start, last_start + delta, worker_dv

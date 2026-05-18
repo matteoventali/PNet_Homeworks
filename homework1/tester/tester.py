@@ -2,24 +2,115 @@ import subprocess
 import threading
 import time
 import matplotlib.pyplot as plt
+import json
+import os
+import sys
 
 # =========================
 # PARAMETRI GLOBALI
 # =========================
 C_LINK = 100.0   # Mbps
-RTT = 0.005     # s
+RTT = 0.005      # s
 ALPHA = 1.5
 BASE_PORT = 5000
 
 # =========================
-# CONFIG TRAINING
+# CONFIG DEFAULT SCENARIO
 # =========================
-TRAININGS = [
-    {"name": "blue",   "senders": ["w1","w2","w3","w4","w5","w6","w7"], "collector": "c1", "collector_ip": "10.0.1.1", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-    {"name": "green",  "senders": ["w8","w9","w10","w11","w12","w13","w14"], "collector": "c2", "collector_ip": "10.0.1.2", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-    {"name": "red",    "senders": ["w15","w16","w17","w18","w19","w20","w21"], "collector": "c3", "collector_ip": "10.0.1.3", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4},
-    {"name": "yellow", "senders": ["w22","w23","w24","w25","w26","w27","w28"], "collector": "c4", "collector_ip": "10.0.1.4", "D": 60.0, "T": 30, "phi": 0.0, "cycles": 4}
+DEFAULT_TRAININGS = [
+    {
+        "name": "blue",
+        "senders": ["w1","w2","w3","w4","w5","w6","w7","w8","w9","w10"],
+        "collector": "c1",
+        "collector_ip": "10.0.1.1",
+        "D": 50,
+        "T": 30,
+        "phi": 1,
+        "cycles": 4
+    },
+    {
+        "name": "green",
+        "senders": ["w11","w12","w13","w14","w15","w16","w17","w18"],
+        "collector": "c2",
+        "collector_ip": "10.0.1.2",
+        "D": 62.5,
+        "T": 40,
+        "phi": 2.5,
+        "cycles": 4
+    },
+    {
+        "name": "red",
+        "senders": ["w19","w20","w21","w22","w23","w24"],
+        "collector": "c3",
+        "collector_ip": "10.0.1.3",
+        "D": 83.35,
+        "T": 30,
+        "phi": 4,
+        "cycles": 4
+    },
+    {
+        "name": "yellow",
+        "senders": ["w25","w26","w27","w28"],
+        "collector": "c4",
+        "collector_ip": "10.0.1.4",
+        "D": 125,
+        "T": 40,
+        "phi": 5,
+        "cycles": 4
+    }
 ]
+
+# =========================
+# HANDLING SCENARIOS
+# =========================
+def load_scenarios(filename="scenarios.json"):
+    scenarios = {
+        "default_incast": {
+            "description": "Original default scenario (from incast_generator.py)",
+            "trainings": DEFAULT_TRAININGS
+        }
+    }
+    
+    if os.path.exists(filename):
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+                if "scenarios" in data:
+                    scenarios.update(data["scenarios"])
+        except Exception as e:
+            print(f"[ERROR] Cannot read {filename}: {e}")
+    else:
+        print(f"[WARNING] File {filename} not found. Only the default scenario will be loaded.")
+        
+    return scenarios
+
+def select_scenario(scenarios):
+    print("\n" + "="*50)
+    print(" TEST SCENARIO SELECTION ")
+    print("="*50)
+    
+    keys = list(scenarios.keys())
+    for i, key in enumerate(keys):
+        desc = scenarios[key].get("description", "No description available.")
+        print(f"[{i}] {key}")
+        print(f"    -> {desc}\n")
+
+    while True:
+        try:
+            choice = input(f"Choose the scenario number to run (0-{len(keys)-1}): ")
+            choice = int(choice)
+            if 0 <= choice < len(keys):
+                selected_key = keys[choice]
+                print(f"\nYou selected: {selected_key}")
+                return scenarios[selected_key]["trainings"]
+            else:
+                print("[!] Invalid choice. Please try again.")
+        except ValueError:
+            print("[!] Please enter a valid number.")
+        except KeyboardInterrupt:
+            print("\nExiting.")
+            sys.exit(0)
+
 
 # =========================
 # UTILS
@@ -53,12 +144,12 @@ def get_worker_port(worker):
 
 
 # =========================
-# SERVER MULTI-PORT
+# MULTI-PORT SERVER
 # =========================
-def start_servers(cmap):
+def start_servers(cmap, trainings):
     used_ports = set()
 
-    for cfg in TRAININGS:
+    for cfg in trainings:
         for w in cfg["senders"]:
             port = get_worker_port(w)
             if port not in used_ports:
@@ -90,7 +181,7 @@ def start_client(worker, target_ip, port, D_mbit, f_v, cmap):
 
 
 # =========================
-# MONITOR RX
+# RX MONITOR
 # =========================
 def get_rx(node, cmap):
     r = subprocess.run(
@@ -100,23 +191,6 @@ def get_rx(node, cmap):
     )
     return int(r.stdout.strip() or 0)
 
-
-#def monitor_rx(node, cmap, logfile, stop_event):
-#    print(f"[MONITOR RX] {node}")
-#    prev = get_rx(node, cmap)
-#    t = 0
-#
-#    with open(logfile, "w") as f:
-#        f.write("time throughput_mbps\n")
-#
-#        while not stop_event.is_set():
-#            time.sleep(1)
-#            curr = get_rx(node, cmap)
-#            thr = (curr - prev) * 8 / 1e6
-#            f.write(f"{t} {thr}\n")
-#            f.flush()
-#            prev = curr
-#            t += 1
 
 def monitor_rx(node, cmap, logfile, stop_event):
     print(f"[MONITOR RX] {node}")
@@ -132,12 +206,12 @@ def monitor_rx(node, cmap, logfile, stop_event):
             curr_time = time.time()
             curr_bytes = get_rx(node, cmap)
             
-            # Calcolo esatto: Delta Byte / Delta Tempo Reale
+            # Exact calculation: Delta Bytes / Delta Real Time
             delta_t = curr_time - prev_time
             if delta_t > 0:
                 thr = (curr_bytes - prev_bytes) * 8 / (1e6 * delta_t)
                 
-                # Arrotondiamo il tempo per il grafico
+                # Round time for the plot
                 t_plot = curr_time - t_start
                 f.write(f"{t_plot:.1f} {thr:.2f}\n")
                 f.flush()
@@ -145,9 +219,8 @@ def monitor_rx(node, cmap, logfile, stop_event):
             prev_bytes = curr_bytes
             prev_time = curr_time
 
-
 # =========================
-# MONITOR TX
+# TX MONITOR
 # =========================
 def get_tx(node, cmap):
     r = subprocess.run(
@@ -208,8 +281,12 @@ def run_training(cfg, cmap):
 # =========================
 # PLOT
 # =========================
-def plot_collectors(files):
-    plt.figure()
+def plot_collectors(files, trainings):
+    plt.figure(figsize=(10, 5))
+    
+    # Mappa per colorare le linee del collector in base al nome della procedura
+    color_map = {cfg["collector"]: cfg["name"] for cfg in trainings}
+    
     for label, fname in files.items():
         t, y = [], []
         with open(fname) as f:
@@ -218,45 +295,72 @@ def plot_collectors(files):
                 a, b = line.split()
                 t.append(float(a))
                 y.append(float(b))
-        plt.plot(t, y, label=label)
+                
+        c_name = color_map.get(label, 'tab:blue')
+        # Sostituiamo il giallo con l'arancione per renderlo visibile su sfondo bianco
+        plot_color = 'orange' if c_name == 'yellow' else c_name
+        
+        plt.plot(t, y, label=f"Collector {label} ({c_name})", color=plot_color, linewidth=2)
 
-    plt.title("Collector RX")
-    plt.xlabel("Time")
+    plt.title("Collector RX - Throughput per Procedura", fontsize=14, fontweight='bold')
+    plt.xlabel("Time (s)")
     plt.ylabel("Mbps")
     plt.legend()
-    plt.grid()
-    plt.show()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    # plt.show() è stato rimosso da qui e spostato in fondo al main
 
 
-def plot_workers(files):
-    n = len(files)
-    fig, axes = plt.subplots(n, 1, figsize=(8, 3*n), sharex=True)
+def plot_workers_by_procedure(tx_files, trainings):
+    # Genera una finestra (figure) separata per ogni procedura
+    for cfg in trainings:
+        proc_name = cfg["name"]
+        workers = cfg["senders"]
+        
+        # Filtra solo i file TX appartenenti ai worker di questa procedura
+        proc_files = {w: tx_files[w] for w in workers if w in tx_files}
+        
+        if not proc_files:
+            continue
+            
+        n = len(proc_files)
+        # Altezza dinamica in base al numero di worker
+        fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), sharex=True)
+        
+        if n == 1:
+            axes = [axes]
 
-    if n == 1:
-        axes = [axes]
+        plot_color = 'orange' if proc_name == 'yellow' else proc_name
+        # Sicurezza: se il nome procedura non è un colore standard, usa default
+        if plot_color not in ['blue', 'green', 'red', 'orange', 'cyan', 'magenta', 'black', 'purple']:
+            plot_color = 'tab:blue'
 
-    for ax, (label, fname) in zip(axes, files.items()):
-        t, y = [], []
-        with open(fname) as f:
-            next(f)
-            for line in f:
-                a, b = line.split()
-                t.append(float(a))
-                y.append(float(b))
+        for ax, (label, fname) in zip(axes, proc_files.items()):
+            t, y = [], []
+            with open(fname) as f:
+                next(f)
+                for line in f:
+                    a, b = line.split()
+                    t.append(float(a))
+                    y.append(float(b))
 
-        ax.plot(t, y)
-        ax.set_title(label)
-        ax.grid()
+            ax.plot(t, y, color=plot_color, linewidth=1.5)
+            ax.set_title(f"Worker: {label}", fontsize=10)
+            ax.grid(True, linestyle='--', alpha=0.7)
+            ax.set_ylabel("Mbps")
 
-    axes[-1].set_xlabel("Time")
-    fig.suptitle("Worker TX")
-    plt.show()
+        axes[-1].set_xlabel("Time (s)")
+        fig.suptitle(f"Worker TX - Procedura: {proc_name.upper()}", fontsize=14, fontweight='bold')
+        plt.tight_layout()
 
 
 # =========================
 # MAIN
 # =========================
 def main():
+    # 1. Load and select the scenario
+    scenarios = load_scenarios()
+    trainings = select_scenario(scenarios)
+
     print("\n=== START ===\n")
 
     cmap = get_container_map()
@@ -265,7 +369,7 @@ def main():
         print(k, "->", v)
 
     print("\nStarting servers...")
-    start_servers(cmap)
+    start_servers(cmap, trainings)
 
     time.sleep(2)
 
@@ -276,7 +380,7 @@ def main():
     # RX MONITOR (collector)
     # =========================
     rx_files = {}
-    collectors = set(cfg["collector"] for cfg in TRAININGS)
+    collectors = set(cfg["collector"] for cfg in trainings)
 
     for c in collectors:
         fname = f"{c}_rx.txt"
@@ -292,7 +396,7 @@ def main():
     # =========================
     tx_files = {}
     workers = set()
-    for cfg in TRAININGS:
+    for cfg in trainings:
         workers.update(cfg["senders"])
 
     for w in workers:
@@ -310,7 +414,7 @@ def main():
     print("\nStarting traffic...")
     threads = []
 
-    for cfg in TRAININGS:
+    for cfg in trainings:
         t = threading.Thread(target=run_training, args=(cfg, cmap))
         t.start()
         threads.append(t)
@@ -324,8 +428,13 @@ def main():
         t.join()
 
     print("\nPlotting...")
-    plot_collectors(rx_files)
-    plot_workers(tx_files)
+    
+    # Passiamo 'trainings' per raggruppare ed estrarre i colori
+    plot_collectors(rx_files, trainings)
+    plot_workers_by_procedure(tx_files, trainings)
+    
+    # Mostra tutte le finestre generate contemporaneamente
+    plt.show()
 
     print("\n=== DONE ===\n")
 
