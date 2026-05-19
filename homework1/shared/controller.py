@@ -13,7 +13,7 @@ log = core.getLogger()
 # Setup logger files
 def setup_file_logger(name, filename):
     handler = logging.FileHandler(filename, mode='w')
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s', datefmt='%H:%M:%S'))
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
