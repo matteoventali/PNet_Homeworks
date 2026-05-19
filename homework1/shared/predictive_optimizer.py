@@ -222,7 +222,7 @@ class PredictiveIncastOptimizer(object):
     def _deploy_flow_rules(self, flow_mapping, adjacency, ip_to_mac, mac_to_location, collector_dpid_map):
         for (w_ip, c_ip), spine_dpid in flow_mapping.items():
             w_mac = ip_to_mac.get(w_ip)
-            c_mac = ip_to_mac.get(c_ip) # Recuperiamo anche il MAC del collector
+            c_mac = ip_to_mac.get(c_ip)
             if not w_mac or not c_mac: continue
             
             # Identifying the location of worker and collector (Leaf DPIDs)
@@ -238,7 +238,6 @@ class PredictiveIncastOptimizer(object):
 
             path_selected = [leaf_dpid, spine_dpid, collector_dpid]
             
-            # PASSIAMO I MAC ADDRESS, NON GLI IP
             # Route from ingress leaf switch to the chosen spine switch
             out_port_leaf = adjacency.get(leaf_dpid, {}).get(spine_dpid)
             if out_port_leaf:
@@ -266,6 +265,7 @@ class PredictiveIncastOptimizer(object):
         
         conn = core.openflow.getConnection(dpid)
         if conn: conn.send(msg)
+
 
 def launch():
     core.registerNew(PredictiveIncastOptimizer)

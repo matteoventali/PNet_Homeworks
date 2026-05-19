@@ -20,6 +20,8 @@ def setup_file_logger(name, filename):
     logger.propagate = False
     return logger
 
+# Event for the optimizer. It will be launched every time the controller needs
+# a re-computation of optimal routes because some procedure's parameters have been discovered or changed
 class OptimizationRequired(Event):
     def __init__(self, procedures, adjacency, edge_ports, mac_to_ip, mac_to_location, collector_dpid_map):
         super(OptimizationRequired, self).__init__()
@@ -30,6 +32,7 @@ class OptimizationRequired(Event):
         self.collector_dpid_map = collector_dpid_map
         self.ip_to_mac = {ip: mac for mac, ip in mac_to_ip.items()}
         self.spines = sorted([d for d in adjacency.keys() if len(edge_ports.get(d, set())) == 0])
+
 
 class IncastController(EventMixin):
     _eventMixin_events = set([OptimizationRequired])
@@ -62,6 +65,7 @@ class IncastController(EventMixin):
         # Telemetry for Link Utilization
         self.port_stats = {}
         self.link_load = {}
+        #self.counter = 0 # Remove comment on this row if you want to use round robin tecnique for temporary routes
         
         core.openflow.addListeners(self)
         core.TopologyDiscovery.addListenerByName("TopologyStable", self._handle_TopologyStable)
@@ -103,10 +107,8 @@ class IncastController(EventMixin):
                 tx_mbps = (delta_tx * 8) / (self.POLLING_INTERVAL * 1e6)
                 rx_mbps = (delta_rx * 8) / (self.POLLING_INTERVAL * 1e6)
                 
-                # Salviamo una tupla: (Upstream, Downstream)
                 self.link_load[key] = (tx_mbps, rx_mbps)
                 
-            # Aggiorniamo la memoria per il prossimo ciclo salvando la tupla
             self.port_stats[key] = (current_tx, current_rx)
 
     def _print_global_link_utilization(self):
@@ -361,10 +363,14 @@ class IncastController(EventMixin):
             if paths:
                 
                 # Choosing a path as a temporary route
+                # Round robin or solution based on hash
+                #self.counter = self.counter + 1
                 if ip_p:
                     path_idx = hash(str(ip_p.srcip) + str(ip_p.dstip)) % len(paths)
                 else:
                     path_idx = hash(str(packet.src) + str(packet.dst)) % len(paths)
+                
+                path_idx = self.counter % len(paths)
                 chosen_path = paths[path_idx]
                 
                 # Installing the path

@@ -82,7 +82,6 @@ class IncastOptimizer(object):
 
             path_selected = [leaf_dpid, spine_dpid, collector_dpid]
             
-            # PASSIAMO I MAC ADDRESS, NON GLI IP
             # Route from ingress leaf switch to the chosen spine switch
             out_port_leaf = adjacency.get(leaf_dpid, {}).get(spine_dpid)
             if out_port_leaf:
