@@ -282,12 +282,8 @@ def run_training(cfg, cmap):
 # =========================
 # PLOT
 # =========================
-def plot_collectors(files, trainings):
-    fig, ax = plt.subplots(figsize=(10, 5))
-    
-    # Map to color collector lines based on procedure name
-    color_map = {cfg["collector"]: cfg["name"] for cfg in trainings}
-    
+def plot_collectors(files):
+    plt.figure()
     for label, fname in files.items():
         t, y = [], []
         with open(fname) as f:
@@ -296,27 +292,14 @@ def plot_collectors(files, trainings):
                 a, b = line.split()
                 t.append(float(a))
                 y.append(float(b))
-                
-        c_name = color_map.get(label, 'tab:blue')
-        # Map yellow to orange for visibility on white background
-        plot_color = 'orange' if c_name == 'yellow' else c_name
-        
-        ax.plot(t, y, label=f"Collector {label} ({c_name})", color=plot_color, linewidth=2)
+        plt.plot(t, y, label=label)
 
-    # Pad the title so it doesn't touch the graph
-    ax.set_title("Collector RX - Throughput per Procedure", fontsize=14, fontweight='bold', pad=20)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Mbps")
-    
-    # Add vertical margins so data doesn't hit the ceiling
-    ax.margins(y=0.15)
-    
-    # Place legend completely outside the plot to the right
-    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
-    ax.grid(True, linestyle='--', alpha=0.7)
-    
-    # Adjust layout to make room for the external legend
-    plt.tight_layout()
+    plt.title("Collector RX")
+    plt.xlabel("Time")
+    plt.ylabel("Mbps")
+    plt.legend()
+    plt.grid()
+    plt.show()
 
 
 def plot_workers_by_procedure(tx_files, trainings):
@@ -443,7 +426,7 @@ def main():
 
     print("\nPlotting...")
     
-    plot_collectors(rx_files, trainings)
+    plot_collectors(rx_files)
     plot_workers_by_procedure(tx_files, trainings)
     
     # Show all generated windows simultaneously

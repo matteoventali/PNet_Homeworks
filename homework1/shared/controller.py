@@ -364,13 +364,14 @@ class IncastController(EventMixin):
                 
                 # Choosing a path as a temporary route
                 # Round robin or solution based on hash
+                
                 #self.counter = self.counter + 1
+                #path_idx = self.counter % len(paths)
+
                 if ip_p:
                     path_idx = hash(str(ip_p.srcip) + str(ip_p.dstip)) % len(paths)
                 else:
                     path_idx = hash(str(packet.src) + str(packet.dst)) % len(paths)
-                
-                path_idx = self.counter % len(paths)
                 chosen_path = paths[path_idx]
                 
                 # Installing the path
