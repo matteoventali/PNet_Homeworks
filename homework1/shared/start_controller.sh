@@ -12,6 +12,9 @@ elif [ "$1" == "normal" ]; then
 elif [ "$1" == "temporal" ]; then
     OPT_MODULE="predictive_optimizer"
     echo "[INFO] Modality: TEMPORAL OPTIMIZER"
+elif [ "$1" == "dumb" ]; then
+    /pox/pox.py openflow.of_01 -port=6653 openflow.discovery forwarding.l2_learning openflow.spanning_tree
+    exit 0
 elif [ -z "$1" ]; then
     OPT_MODULE=""
     echo "[INFO] Modality: NO OPTIMIZER"
