@@ -20,7 +20,7 @@ elif [ -z "$1" ]; then
     echo "[INFO] Modality: NO OPTIMIZER"
 else
     echo "[ERROR] Parameter '$1' unknown."
-    echo "Correctly use: $0 [normal | advanced]"
+    echo "Correctly use: $0 [normal | advanced | temporal | dumb]"
     exit 1
 fi
 

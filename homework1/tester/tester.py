@@ -14,9 +14,20 @@ RTT = 0.005      # s
 ALPHA = 1.5
 BASE_PORT = 5000
 
+# Global mapping to synchronize colors across all plots
+PROC_COLORS = {
+    "blue": "tab:blue",
+    "green": "tab:green",
+    "red": "tab:red",
+    "yellow": "orange",
+    "orange": "orange",
+    "purple": "tab:purple",
+    "cyan": "tab:cyan",
+    "magenta": "tab:pink"
+}
+
 # =========================
 # DEFAULT SCENARIO CONFIG
-# (From incast_generator.py)
 # =========================
 DEFAULT_TRAININGS = [
     {
@@ -67,7 +78,7 @@ DEFAULT_TRAININGS = [
 def load_scenarios(filename="scenarios.json"):
     scenarios = {
         "default_incast": {
-            "description": "Original default scenario (from incast_generator.py)",
+            "description": "Original default scenario",
             "trainings": DEFAULT_TRAININGS
         }
     }
@@ -132,8 +143,9 @@ def get_container_map():
 def docker_exec(node, cmd, cmap):
     if node not in cmap:
         print(f"[ERROR] Node {node} not found!")
-        return
-    subprocess.Popen(["docker", "exec", cmap[node]] + cmd)
+        return None
+    # Now we return Popen so it can be monitored
+    return subprocess.Popen(["docker", "exec", cmap[node]] + cmd)
 
 
 def compute_window_bytes(f_v):
@@ -141,7 +153,7 @@ def compute_window_bytes(f_v):
 
 
 def get_worker_port(worker):
-    return BASE_PORT + int(worker[1:])  # w1 → 5001
+    return BASE_PORT + int(worker[1:])
 
 
 # =========================
@@ -149,15 +161,13 @@ def get_worker_port(worker):
 # =========================
 def start_servers(cmap, trainings):
     used_ports = set()
-
     for cfg in trainings:
         for w in cfg["senders"]:
             port = get_worker_port(w)
             if port not in used_ports:
                 print(f"[SERVER] {cfg['collector']}:{port}")
-                docker_exec(cfg["collector"],
-                            ["iperf3", "-s", "-D", "-p", str(port)],
-                            cmap)
+                # The server goes to background internally in iperf with -D
+                docker_exec(cfg["collector"], ["iperf3", "-s", "-D", "-p", str(port)], cmap)
                 used_ports.add(port)
 
 
@@ -168,78 +178,59 @@ def start_client(worker, target_ip, port, D_mbit, f_v, cmap):
     window = compute_window_bytes(f_v)
     bytes_to_send = int(D_mbit * 1e6 / 8)
 
-    print(f"[FLOW] {worker} -> {target_ip}:{port} | fv={f_v:.2f}")
-
+    # No '&' at the end: the command is synchronous, concurrency is handled via Popen
     cmd = (
         f"iperf3 -c {target_ip} -p {port} "
         f"-n {bytes_to_send} "
         f"-w {window} "
         f"--set-mss 1460 --no-delay "
-        f"> /dev/null 2>&1 &"
+        f"> /dev/null 2>&1"
     )
 
-    docker_exec(worker, ["bash", "-c", cmd], cmap)
+    return docker_exec(worker, ["bash", "-c", cmd], cmap)
 
 
 # =========================
-# RX MONITOR
+# RX/TX MONITORS
 # =========================
 def get_rx(node, cmap):
     r = subprocess.run(
-        ["docker", "exec", cmap[node],
-         "cat", "/sys/class/net/eth0/statistics/rx_bytes"],
+        ["docker", "exec", cmap[node], "cat", "/sys/class/net/eth0/statistics/rx_bytes"],
         capture_output=True, text=True
     )
     return int(r.stdout.strip() or 0)
 
-
 def monitor_rx(node, cmap, logfile, stop_event):
-    print(f"[MONITOR RX] {node}")
     prev_bytes = get_rx(node, cmap)
     prev_time = time.time()
     t_start = prev_time
-
     with open(logfile, "w") as f:
         f.write("time throughput_mbps\n")
-
         while not stop_event.is_set():
             time.sleep(1)
             curr_time = time.time()
             curr_bytes = get_rx(node, cmap)
-            
-            # Exact calculation: Delta Bytes / Delta Real Time
             delta_t = curr_time - prev_time
             if delta_t > 0:
                 thr = (curr_bytes - prev_bytes) * 8 / (1e6 * delta_t)
-                
-                # Round time for the plot
                 t_plot = curr_time - t_start
                 f.write(f"{t_plot:.1f} {thr:.2f}\n")
                 f.flush()
-                
             prev_bytes = curr_bytes
             prev_time = curr_time
 
-# =========================
-# TX MONITOR
-# =========================
 def get_tx(node, cmap):
     r = subprocess.run(
-        ["docker", "exec", cmap[node],
-         "cat", "/sys/class/net/eth0/statistics/tx_bytes"],
+        ["docker", "exec", cmap[node], "cat", "/sys/class/net/eth0/statistics/tx_bytes"],
         capture_output=True, text=True
     )
     return int(r.stdout.strip() or 0)
 
-
 def monitor_tx(node, cmap, logfile, stop_event):
-    print(f"[MONITOR TX] {node}")
     prev = get_tx(node, cmap)
     t = 0
-
     with open(logfile, "w") as f:
         f.write("time throughput_mbps\n")
-
         while not stop_event.is_set():
             time.sleep(1)
             curr = get_tx(node, cmap)
@@ -251,7 +242,7 @@ def monitor_tx(node, cmap, logfile, stop_event):
 
 
 # =========================
-# TRAINING
+# TRAINING LOGIC
 # =========================
 def run_training(cfg, cmap):
     name = cfg["name"]
@@ -261,45 +252,78 @@ def run_training(cfg, cmap):
 
     K = len(cfg["senders"])
     f_v = C_LINK / K
+    
+    # Theoretical baseline calculation: (D * K) / C_LINK
+    baseline_time = (cfg["D"] * K) / C_LINK
+    fct_file = f"{name}_fct.txt"
 
-    print(f"[{name}] START | K={K}, fv={f_v:.2f}")
+    print(f"[{name}] START | K={K}, fv={f_v:.2f} Mbps, Baseline: {baseline_time:.2f}s")
 
-    for i in range(cfg["cycles"]):
-        print(f"[{name}] Cycle {i+1}")
+    with open(fct_file, "w") as f:
+        f.write("cycle actual_fct baseline\n")
+        
+        for i in range(cfg["cycles"]):
+            cycle_start = time.time()
+            processes = []
 
-        start = time.time()
+            # 1. Start the clients (they start almost simultaneously)
+            for w in cfg["senders"]:
+                port = get_worker_port(w)
+                p = start_client(w, cfg["collector_ip"], port, cfg["D"], f_v, cmap)
+                if p:
+                    processes.append(p)
 
-        for w in cfg["senders"]:
-            port = get_worker_port(w)
-            start_client(w, cfg["collector_ip"], port,
-                         cfg["D"], f_v, cmap)
+            # 2. Wait for all of them to complete transmission for this cycle
+            for p in processes:
+                p.wait()
 
-        time.sleep(max(0, cfg["T"] - (time.time() - start)))
+            cycle_end = time.time()
+            actual_duration = cycle_end - cycle_start
+            
+            # Write the data
+            f.write(f"{i+1} {actual_duration:.3f} {baseline_time:.3f}\n")
+            f.flush()
+
+            print(f"[{name}] Cycle {i+1} COMPLETED | Actual: {actual_duration:.2f}s vs Baseline: {baseline_time:.2f}s")
+
+            # 3. Respect the cycle periodicity T
+            time_left = cfg["T"] - actual_duration
+            if time_left > 0:
+                time.sleep(time_left)
+            else:
+                print(f"[!] WARNING [{name}]: Cycle {i+1} lasted longer than period T ({cfg['T']}s)!")
 
     print(f"[{name}] DONE")
 
 
 # =========================
-# PLOT
+# PLOT FUNCTIONS
 # =========================
-def plot_collectors(files):
+def plot_collectors(files, trainings):
     plt.figure()
-    for label, fname in files.items():
+    
+    # Map Collector -> Procedure Name -> Color
+    c_to_proc = {cfg["collector"]: cfg["name"] for cfg in trainings}
+    
+    for c, fname in files.items():
+        proc_name = c_to_proc.get(c, "unknown")
+        color = PROC_COLORS.get(proc_name, "black")
+        
         t, y = [], []
-        with open(fname) as f:
-            next(f)
-            for line in f:
-                a, b = line.split()
-                t.append(float(a))
-                y.append(float(b))
-        plt.plot(t, y, label=label)
+        if os.path.exists(fname):
+            with open(fname) as f:
+                next(f)
+                for line in f:
+                    a, b = line.split()
+                    t.append(float(a))
+                    y.append(float(b))
+        plt.plot(t, y, label=f"{c} ({proc_name})", color=color, linewidth=1.5)
 
     plt.title("Collector RX")
-    plt.xlabel("Time")
+    plt.xlabel("Time (s)")
     plt.ylabel("Mbps")
     plt.legend()
-    plt.grid()
-    plt.show()
+    plt.grid(True, linestyle='--', alpha=0.7)
 
 
 def plot_workers_by_procedure(tx_files, trainings):
@@ -308,109 +332,122 @@ def plot_workers_by_procedure(tx_files, trainings):
         workers = cfg["senders"]
         
         proc_files = {w: tx_files[w] for w in workers if w in tx_files}
-        
         if not proc_files:
             continue
             
         n = len(proc_files)
-        # Dynamic height based on number of workers
         fig, axes = plt.subplots(n, 1, figsize=(10, 2.5 * n), sharex=True)
-        
         if n == 1:
             axes = [axes]
 
-        plot_color = 'orange' if proc_name == 'yellow' else proc_name
-        if plot_color not in ['blue', 'green', 'red', 'orange', 'cyan', 'magenta', 'black', 'purple']:
-            plot_color = 'tab:blue'
+        plot_color = PROC_COLORS.get(proc_name, "tab:blue")
 
         for ax, (label, fname) in zip(axes, proc_files.items()):
             t, y = [], []
-            with open(fname) as f:
-                next(f)
-                for line in f:
-                    a, b = line.split()
-                    t.append(float(a))
-                    y.append(float(b))
+            if os.path.exists(fname):
+                with open(fname) as f:
+                    next(f)
+                    for line in f:
+                        a, b = line.split()
+                        t.append(float(a))
+                        y.append(float(b))
 
             ax.plot(t, y, color=plot_color, linewidth=1.5)
-            # Add vertical margins to prevent line from hitting the top
             ax.margins(y=0.15)
-            
-            # Place subplot title cleanly
             ax.set_title(f"Worker: {label}", fontsize=10, loc='left', pad=5)
             ax.grid(True, linestyle='--', alpha=0.7)
             ax.set_ylabel("Mbps")
 
         axes[-1].set_xlabel("Time (s)")
-        
-        # Main figure title
         fig.suptitle(f"Worker TX - Procedure: {proc_name.upper()}", fontsize=14, fontweight='bold')
-        
-        # Use rect to ensure suptitle doesn't overlap with the top subplot
         plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+
+def plot_fct(trainings):
+    # A single figure organized in subplots based on the number of procedures
+    n = len(trainings)
+    fig, axes = plt.subplots(n, 1, figsize=(8, 3.5 * n), sharex=True)
+    if n == 1:
+        axes = [axes]
+
+    for ax, cfg in zip(axes, trainings):
+        name = cfg["name"]
+        fname = f"{name}_fct.txt"
+        color = PROC_COLORS.get(name, "tab:blue")
+
+        cycles, actuals, baselines = [], [], []
+        if os.path.exists(fname):
+            with open(fname) as f:
+                next(f)
+                for line in f:
+                    c_id, act, base = line.split()
+                    cycles.append(int(c_id))
+                    actuals.append(float(act))
+                    baselines.append(float(base))
+
+        if cycles:
+            # Create the bars for Actual FCT
+            ax.bar(cycles, actuals, color=color, alpha=0.7, label='Actual FCT')
+            
+            # Draw the dashed line for the baseline
+            baseline_val = baselines[0]
+            ax.axhline(y=baseline_val, color='red', linestyle='--', linewidth=2, 
+                       label=f'Baseline FCT ({baseline_val:.2f}s)')
+            
+            # Formatting
+            ax.set_title(f"Flow Completion Time - Procedure: {name.upper()}", fontsize=11, loc='left')
+            ax.set_ylabel("Time (s)")
+            ax.set_xticks(cycles)
+            ax.grid(True, linestyle='--', alpha=0.5, axis='y')
+            ax.legend(loc='upper right')
+
+    axes[-1].set_xlabel("Cycle Number")
+    fig.suptitle("FCT (Flow Completion Time) vs Baseline per Procedure", fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
 
 # =========================
 # MAIN
 # =========================
 def main():
-    # 1. Load and select the scenario
     scenarios = load_scenarios()
     trainings = select_scenario(scenarios)
 
     print("\n=== START ===\n")
-
     cmap = get_container_map()
-
-    for k, v in cmap.items():
-        print(k, "->", v)
-
+    
     print("\nStarting servers...")
     start_servers(cmap, trainings)
-
     time.sleep(2)
 
     stop_event = threading.Event()
     monitors = []
 
-    # =========================
     # RX MONITOR (collector)
-    # =========================
     rx_files = {}
     collectors = set(cfg["collector"] for cfg in trainings)
-
     for c in collectors:
         fname = f"{c}_rx.txt"
         rx_files[c] = fname
-
-        t = threading.Thread(target=monitor_rx,
-                             args=(c, cmap, fname, stop_event))
+        t = threading.Thread(target=monitor_rx, args=(c, cmap, fname, stop_event))
         t.start()
         monitors.append(t)
 
-    # =========================
     # TX MONITOR (workers)
-    # =========================
     tx_files = {}
     workers = set()
     for cfg in trainings:
         workers.update(cfg["senders"])
-
     for w in workers:
         fname = f"{w}_tx.txt"
         tx_files[w] = fname
-
-        t = threading.Thread(target=monitor_tx,
-                             args=(w, cmap, fname, stop_event))
+        t = threading.Thread(target=monitor_tx, args=(w, cmap, fname, stop_event))
         t.start()
         monitors.append(t)
 
-    # =========================
     # TRAFFIC
-    # =========================
     print("\nStarting traffic...")
     threads = []
-
     for cfg in trainings:
         t = threading.Thread(target=run_training, args=(cfg, cmap))
         t.start()
@@ -419,18 +456,37 @@ def main():
     for t in threads:
         t.join()
 
+    # Terminate monitoring
     stop_event.set()
-
     for t in monitors:
         t.join()
 
     print("\nPlotting...")
     
-    plot_collectors(rx_files)
+    plot_collectors(rx_files, trainings)
     plot_workers_by_procedure(tx_files, trainings)
+    plot_fct(trainings)  
     
-    # Show all generated windows simultaneously
+    # This command blocks execution until you close the plot windows
     plt.show()
+
+    # =========================
+    # CLEANUP TEMPORARY FILES
+    # =========================
+    print("\nCleaning up temporary files...")
+    
+    # Gather all paths of the created files into a single list
+    files_to_remove = list(rx_files.values()) + list(tx_files.values())
+    for cfg in trainings:
+        files_to_remove.append(f"{cfg['name']}_fct.txt")
+        
+    # Remove files safely
+    for f in files_to_remove:
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except Exception as e:
+            print(f"[WARNING] Could not remove {f}: {e}")
 
     print("\n=== DONE ===\n")
 
