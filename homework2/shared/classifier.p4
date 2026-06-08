@@ -137,6 +137,41 @@ control MyIngress(inout headers hdr,
 
     /* ----------------------------------------------------- */
 
+    /* CLASSIFICATION */
+    // Add in future: NSH header
+    action start_chain(bit<20>label, egressSpec_t port) {
+        // Creating the mpls header
+        hdr.mpls.push_front(1);
+        hdr.mpls[0].setValid();
+        hdr.mpls[0].label = (bit<20>)label;
+        hdr.mpls[0].exp = (bit<3>)0;
+        hdr.mpls[0].bos = (bit<1>)1;
+        hdr.mpls[0].ttl = (bit<8>)100;
+        
+        // Updating the ethertype
+        hdr.ethernet.etherType = TYPE_MPLS;
+        
+        // Set the output port
+        standard_metadata.egress_spec = port;
+    }
+    
+    table classifier_table {
+        key = {
+            hdr.ipv4.srcAddr: exact;
+            hdr.ipv4.dstAddr: exact;
+        }
+
+        actions = {
+            start_chain;
+            NoAction;
+        }
+        default_action = NoAction();
+
+        size = 1024;
+    }
+
+    /* ----------------------------------------------------- */
+
     /* MPLS PROCESSING */
     action push(bit<20> label, egressSpec_t port) {
         // Creating the mpls header
@@ -229,8 +264,14 @@ control MyIngress(inout headers hdr,
         }
         else if (hdr.ipv4.isValid()) // If ipv4 header is found and is valid
         {
-            // Try to forward with ipv4
-            ipv4_lpm.apply();
+            // Check if the flow is associated to a specific chain
+            if (!classifier_table.apply().hit)
+            {
+                // If we are there it means that no entries (ip_src, ip_dest)
+                // has been found inside the classifier table
+                // Try to forward trough simply ipv4_forwarding
+                ipv4_lpm.apply();
+            }
         }
     }
 }

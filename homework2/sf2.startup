@@ -1,4 +1,4 @@
-ln -s /shared/*.p4
+ln -s /shared/*.p4 .
 
 p4c transit.p4
 simple_switch -i 1@eth0 transit.json &
