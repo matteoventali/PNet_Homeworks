@@ -18,8 +18,7 @@ typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
 
-const bit<16> TYPE_IPV4 = 0x0800;
-const bit<16> TYPE_MPLS = 0x8847;
+const bit<16> TYPE_IPV4 = 0x800;
 
 header ethernet_t {
     macAddr_t dstAddr;
@@ -42,20 +41,12 @@ header ipv4_t {
     ip4Addr_t dstAddr;
 }
 
-header mpls_t {
-    bit<20> label;
-    bit<3>  tc;
-    bit<1>  bos;
-    bit<8>  ttl;
-}
-
 struct metadata {
     // Empty metadata struct for this basic transit node
 }
 
 struct headers {
     ethernet_t ethernet;
-    mpls_t     mpls;
     ipv4_t     ipv4;
 }
 
@@ -76,16 +67,8 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.etherType) {
             TYPE_IPV4: parse_ipv4;
-            TYPE_MPLS: parse_mpls;
             default: accept;
         }
-    }
-
-    // Transit nodes only need to parse the outer MPLS header 
-    // to forward SFC overlay traffic.
-    state parse_mpls {
-        packet.extract(hdr.mpls);
-        transition accept;
     }
 
     state parse_ipv4 {
@@ -118,10 +101,12 @@ control MyIngress(inout headers hdr,
     
     action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
         // Update MAC addresses for the next hop
-        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.srcAddr = hdr.ethernet.srcAddr;
         hdr.ethernet.dstAddr = dstAddr;
+
         // Decrement TTL
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+        
         // Set the output port
         standard_metadata.egress_spec = port;
     }
@@ -139,45 +124,10 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
-    /* --- MPLS ACTIONS & TABLES (For Forward SFC Traffic) --- */
-
-    action mpls_swap(bit<20> label, egressSpec_t port) {
-        // Swap the existing MPLS label with a new one
-        hdr.mpls.label = label;
-        // Decrement MPLS TTL
-        hdr.mpls.ttl = hdr.mpls.ttl - 1;
-        // Set the output port
-        standard_metadata.egress_spec = port;
-    }
-
-    action mpls_forward(egressSpec_t port) {
-        // Keep the same label, just decrement TTL and forward
-        hdr.mpls.ttl = hdr.mpls.ttl - 1;
-        standard_metadata.egress_spec = port;
-    }
-
-    table mpls_exact {
-        key = {
-            hdr.mpls.label: exact;
-        }
-        actions = {
-            mpls_swap;
-            mpls_forward;
-            drop;
-            NoAction;
-        }
-        size = 1024;
-        default_action = drop();
-    }
-
     /* --- APPLY LOGIC --- */
     apply {
         // If the packet has an MPLS header, process it via the MPLS table
-        if (hdr.mpls.isValid()) {
-            mpls_exact.apply();
-        }
-        // If the packet has an IPv4 header (and no MPLS), process it via the IPv4 table
-        else if (hdr.ipv4.isValid()) {
+        if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
     }
@@ -200,7 +150,24 @@ control MyEgress(inout headers hdr,
  * ========================================================================= */
 
 control MyComputeChecksum(inout headers hdr, inout metadata meta) {
-    apply { }
+    apply {
+        update_checksum(
+            hdr.ipv4.isValid(),
+            { hdr.ipv4.version,
+              hdr.ipv4.ihl,
+              hdr.ipv4.diffserv,
+              hdr.ipv4.totalLen,
+              hdr.ipv4.identification,
+              hdr.ipv4.flags,
+              hdr.ipv4.fragOffset,
+              hdr.ipv4.ttl,
+              hdr.ipv4.protocol,
+              hdr.ipv4.srcAddr,
+              hdr.ipv4.dstAddr },
+            hdr.ipv4.hdrChecksum,
+            HashAlgorithm.csum16
+        );
+    }
 }
 
 /* =========================================================================
@@ -211,7 +178,6 @@ control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         // Emit headers in the exact order they should appear on the wire
         packet.emit(hdr.ethernet);
-        packet.emit(hdr.mpls);
         packet.emit(hdr.ipv4);
     }
 }
