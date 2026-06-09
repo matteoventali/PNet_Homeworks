@@ -1,7 +1,7 @@
 ln -s /shared/*.p4 .
 
-p4c transit.p4
-simple_switch -i 0@eth0 -i 1@eth1 -i 2@eth2 -i 3@eth3 transit.json &
+p4c sff.p4
+simple_switch -i 0@eth0 -i 1@eth1 -i 2@eth2 -i 3@eth3 sff.json &
 
 while [[ $(pgrep simple_switch) -eq 0 ]]; do sleep 1; done
 until simple_switch_CLI <<< "help"; do sleep 1; done

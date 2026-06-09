@@ -41,6 +41,12 @@ header mpls_t {
     bit<8>      ttl;
 }
 
+header nsh_t {
+    bit<24>     spi;
+    bit<8>      si;
+}
+
+
 struct metadata {
     // Empty metadata struct for this basic transit node
 }
@@ -48,6 +54,7 @@ struct metadata {
 struct headers {
     ethernet_t              ethernet;
     mpls_t[MAX_HEADER]      mpls;
+    nsh_t                   nsh;
     ipv4_t                  ipv4;
 }
 
@@ -75,11 +82,26 @@ parser MyParser(packet_in packet,
 
     state parse_mpls {
         packet.extract(hdr.mpls.next);
-        transition select(hdr.mpls.last.bos) {
-            0: parse_mpls;
-            //1: parse_ipv4;
+        transition select(hdr.mpls.last.bos, hdr.mpls.last.exp) {
+            (0, _): parse_stack_mpls;
+            (1, 0): parse_ipv4;
+            (1, 1): parse_nsh;
             default: accept;
         }
+    }
+
+    state parse_stack_mpls {
+        packet.extract(hdr.mpls.next);
+        transition select(hdr.mpls.last.bos, hdr.mpls.last.exp) {
+            (0, _): parse_stack_mpls;
+            (1, 0): parse_ipv4;
+            default: accept;
+        }
+    }
+
+    state parse_nsh {
+        packet.extract(hdr.nsh);
+        transition accept;
     }
 
     state parse_ipv4 {
@@ -221,16 +243,111 @@ control MyIngress(inout headers hdr,
 
     /* ----------------------------------------------------- */
 
+    /* NSH */
+    action forward_to_sf(egressSpec_t port) {
+        // Set the output port
+        standard_metadata.egress_spec = port;
+
+        // Embedding the SPI and SI inside the destination MAC address
+        bit<48> spi_extended = (bit<48>)hdr.nsh.spi;
+        bit<48> si_extended  = (bit<48>)hdr.nsh.si;
+        hdr.ethernet.dstAddr = (spi_extended << 8) | si_extended;
+        
+        // Removing the NSH header
+        hdr.nsh.setInvalid();
+
+        // Removing the MPLS header
+        // We're sure that there is only one MPLS header to be removed
+        hdr.mpls[0].setInvalid();
+        hdr.mpls.pop_front(1);
+
+        // Updating the ethertype
+        hdr.ethernet.etherType = TYPE_IPV4;
+    }
+
+
+    table nsh_exact {
+        key = {
+            hdr.nsh.spi: exact;
+            hdr.nsh.si:  exact;
+        }
+
+        actions = {
+            forward_to_sf;
+            NoAction;
+        }
+        default_action = NoAction();
+
+        size = 1024;
+    }
+
+    action nsh_proxy_reinject(bit<20>mpls_label, egressSpec_t out_port) 
+    {
+        // Extracting SPI and SI from ethernet SRC address
+        bit<8>  current_si    = (bit<8>)(hdr.ethernet.srcAddr & 0xFF);
+        bit<24> extracted_spi = (bit<24>)((hdr.ethernet.srcAddr >> 8) & 0xFFFFFF);
+        
+        // Computing the new service index
+        bit<8>  next_si       = current_si - 1;
+
+        // Incapsulating the packet in an NSH header and MPLS header
+        // if the chain must continue
+        if ( next_si > 0 )
+        {
+            hdr.nsh.setValid();
+            hdr.nsh.spi = extracted_spi;
+            hdr.nsh.si = next_si;
+            
+            hdr.ethernet.etherType = TYPE_MPLS;
+            hdr.mpls.push_front(1);
+            hdr.mpls[0].setValid();
+            hdr.mpls[0].label = mpls_label;
+            hdr.mpls[0].exp = 1;
+            hdr.mpls[0].bos = 1;
+            hdr.mpls[0].ttl = 100;
+        }
+        
+        // Output port
+        standard_metadata.egress_spec = out_port;
+    }
+
+    table sf_return_table {
+        key = {
+            hdr.ethernet.srcAddr: exact;
+        }
+
+        actions = {
+            nsh_proxy_reinject;
+            NoAction;
+        }
+        default_action = NoAction();
+
+        size = 1024;
+    }
+
+    /* ----------------------------------------------------- */
+
     apply {
-        // If mpls header is valid
-        if (hdr.mpls[0].isValid())
+        // If NSH has been found
+        if (hdr.nsh.isValid())
+        {
+            if (!nsh_exact.apply().hit)
+            {
+                mpls_exact.apply();
+            }
+        }
+        else if (hdr.mpls[0].isValid()) // If mpls header is valid
         {
             mpls_exact.apply();
         }
         else if (hdr.ipv4.isValid()) // If ipv4 header is found and is valid
         {
-            // Try to forward with ipv4
-            ipv4_lpm.apply();
+            // Check if it a return packet from an SF
+            if (!sf_return_table.apply().hit) 
+            {
+                // Try to forward with ipv4
+                ipv4_lpm.apply();
+            }
         }
     }
 }
@@ -281,6 +398,7 @@ control MyDeparser(packet_out packet, in headers hdr) {
         // Emit headers in the exact order they should appear on the wire
         packet.emit(hdr.ethernet);
         packet.emit(hdr.mpls);
+        packet.emit(hdr.nsh);
         packet.emit(hdr.ipv4);
     }
 }

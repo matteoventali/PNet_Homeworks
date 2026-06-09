@@ -41,6 +41,11 @@ header mpls_t {
     bit<8>      ttl;
 }
 
+header nsh_t {
+    bit<24>     spi;
+    bit<8>      si;
+}
+
 struct metadata {
     // Empty metadata struct for this basic transit node
 }
@@ -48,6 +53,7 @@ struct metadata {
 struct headers {
     ethernet_t              ethernet;
     mpls_t[MAX_HEADER]      mpls;
+    nsh_t                   nsh;
     ipv4_t                  ipv4;
 }
 
@@ -139,14 +145,19 @@ control MyIngress(inout headers hdr,
 
     /* CLASSIFICATION */
     // Add in future: NSH header
-    action start_chain(bit<20>label, egressSpec_t port) {
+    action start_chain(bit<20>label, bit<24> spi, bit<8> si, egressSpec_t port) {
         // Creating the mpls header
         hdr.mpls.push_front(1);
         hdr.mpls[0].setValid();
         hdr.mpls[0].label = (bit<20>)label;
-        hdr.mpls[0].exp = (bit<3>)0;
+        hdr.mpls[0].exp = (bit<3>)1;    // Signalling the presence of nsh header
         hdr.mpls[0].bos = (bit<1>)1;
         hdr.mpls[0].ttl = (bit<8>)100;
+
+        // Creating the NSH header
+        hdr.nsh.setValid();
+        hdr.nsh.spi = spi;
+        hdr.nsh.si = si;
         
         // Updating the ethertype
         hdr.ethernet.etherType = TYPE_MPLS;
@@ -322,6 +333,7 @@ control MyDeparser(packet_out packet, in headers hdr) {
         // Emit headers in the exact order they should appear on the wire
         packet.emit(hdr.ethernet);
         packet.emit(hdr.mpls);
+        packet.emit(hdr.nsh);
         packet.emit(hdr.ipv4);
     }
 }
