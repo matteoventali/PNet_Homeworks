@@ -144,7 +144,6 @@ control MyIngress(inout headers hdr,
     /* ----------------------------------------------------- */
 
     /* CLASSIFICATION */
-    // Add in future: NSH header
     action start_chain(bit<20>label, bit<24> spi, bit<8> si, egressSpec_t port) {
         // Creating the mpls header
         hdr.mpls.push_front(1);

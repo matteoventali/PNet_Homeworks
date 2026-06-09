@@ -77,7 +77,6 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.mpls.next);
         transition select(hdr.mpls.last.bos) {
             0: parse_mpls;
-            //1: parse_ipv4;
             default: accept;
         }
     }

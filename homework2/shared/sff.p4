@@ -290,7 +290,7 @@ control MyIngress(inout headers hdr,
         // Computing the new service index
         bit<8>  next_si       = current_si - 1;
 
-        // Incapsulating the packet in an NSH header and MPLS header
+        // Encapsulating the packet in an NSH header and MPLS header
         // if the chain must continue
         if ( next_si > 0 )
         {
@@ -329,20 +329,23 @@ control MyIngress(inout headers hdr,
 
     apply {
         // If NSH has been found
+        // NSH header will be parsed only under the hypothesis that
+        // there is a single MPLS header in the packet
+        // Otherwise, the parser will continue to parse MPLS headers
         if (hdr.nsh.isValid())
         {
-            if (!nsh_exact.apply().hit)
+            if (!nsh_exact.apply().hit) // Verifying the match with a specific SFC
             {
-                mpls_exact.apply();
+                mpls_exact.apply(); // If no chain has been found forward through MPLS
             }
         }
-        else if (hdr.mpls[0].isValid()) // If mpls header is valid
+        else if (hdr.mpls[0].isValid()) // If mpls header is valid and no NSH has been found
         {
             mpls_exact.apply();
         }
         else if (hdr.ipv4.isValid()) // If ipv4 header is found and is valid
         {
-            // Check if it a return packet from an SF
+            // Check if it is a return packet from an SF
             if (!sf_return_table.apply().hit) 
             {
                 // Try to forward with ipv4
