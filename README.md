@@ -72,8 +72,45 @@ To terminate the experiment and clean up the lab environment, exit the controlle
 kathara lclean
 ```
 
-## Homework 2: TBD
-The content of this homework will be defined later.
+## Homework 2: P4 Service Function Chaining (SFC) with NSH
+Implementation of a simplified Service Function Chaining (SFC) architecture in P4, based on the Network Service Header (NSH), MPLS Tunnels, and Service Function Forwarder (SFF) Proxies.
+
+### Overview
+The project focuses on the implementation of an SFC classifier and two Service Function Forwarders (SFFs). The SFFs act as proxies for Service Functions that are not NSH-aware. 
+- The classifier encapsulates matching packets with NSH and transports them through MPLS tunnels.
+- SFFs remove the SFC encapsulation before sending packets to the Service Functions (which only receive plain Ethernet/IPv4/TCP) and restore it upon return.
+- Return traffic bypasses the service chains and follows the shortest IPv4 path.
+
+### How to launch the experiment
+The network topology is managed using Kathara. To start the experiment, navigate to the `homework2` directory and start the lab:
+
+```bash
+cd homework2
+kathara lstart
+```
+
+### Testing the Implementation
+**Prerequisite:** Ensure you have `tmux` installed on your system.
+
+The implementation can be tested using `iperf3` utility, in order to verify the correct traversal of the Service Functions according to the defined policies. The following scripts automatically provide a split terminal (`tmux` session) connected to the specific devices involved in that traffic flow, in order to launch the experiments in a more convenient way.
+
+
+**Experiment 1 (h1 to h3):**
+Traffic from h1 to h3 must traverse SF1, then SF3, then SF2.
+```bash
+bash experiment1.sh
+```
+
+**Experiment 2 (h2 to h4):**
+Traffic from h2 to h4 must traverse SF3.
+```bash
+bash experiment2.sh
+```
+
+To terminate the experiment and clean up the lab environment, run:
+```bash
+kathara lclean
+```
 
 ---
 
