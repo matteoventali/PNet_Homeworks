@@ -1,0 +1,8 @@
+table_add MyIngress.nsh_exact forward_to_sf 20 3 => 2
+table_add MyIngress.nsh_exact forward_to_sf 20 1 => 3
+table_add MyIngress.sf_return_table nsh_proxy_reinject 0x000000001403 => 500 1
+table_add MyIngress.sf_return_table nsh_proxy_reinject 0x000000001401 => 500 1
+
+table_add MyIngress.mpls_exact forward 200 => 1
+
+

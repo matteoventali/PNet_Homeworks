@@ -1,0 +1,7 @@
+table_add MyIngress.classifier_table start_chain 10.0.0.1 10.0.0.3 => 100 20 3 2
+table_add MyIngress.classifier_table start_chain 10.0.0.2 10.0.0.4 => 200 40 1 2
+
+table_add MyIngress.ipv4_lpm ipv4_forward 10.0.0.1/32 => 00:00:00:00:00:01 0
+table_add MyIngress.ipv4_lpm ipv4_forward 10.0.0.2/32 => 00:00:00:00:00:02 1
+table_add MyIngress.ipv4_lpm ipv4_forward 10.0.0.3/32 => 00:00:00:00:00:03 2
+table_add MyIngress.ipv4_lpm ipv4_forward 10.0.0.4/32 => 00:00:00:00:00:04 3

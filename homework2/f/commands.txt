@@ -1,0 +1,8 @@
+table_add MyIngress.mpls_exact forward 500 => 2
+table_add MyIngress.mpls_exact forward 600 => 1
+table_add MyIngress.mpls_exact forward 200 => 2
+
+table_add ipv4_lpm ipv4_forward 10.0.0.1/32 => 00:00:00:00:00:01 0
+table_add ipv4_lpm ipv4_forward 10.0.0.2/32 => 00:00:00:00:00:02 0
+table_add ipv4_lpm ipv4_forward 10.0.0.3/32 => 00:00:00:00:00:03 3
+table_add ipv4_lpm ipv4_forward 10.0.0.4/32 => 00:00:00:00:00:04 3
